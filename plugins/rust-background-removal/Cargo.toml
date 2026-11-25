@@ -1,0 +1,17 @@
+[package]
+name = "simulcast-background-removal"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+ort = { version = "=2.0.0-rc.10", features = ["ndarray", "load-dynamic"] }
+ndarray = "0.16"
+crossbeam-channel = "0.5"
+[features]
+cuda = ["ort/cuda"]
+directml = ["ort/directml"]
+coreml = ["ort/coreml"]
+[build-dependencies]
+bindgen = "0.71"
