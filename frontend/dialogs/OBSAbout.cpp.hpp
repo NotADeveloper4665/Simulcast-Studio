@@ -68,8 +68,8 @@ void OBSAbout::ShowAbout()
 	OBSBasic *main = OBSBasic::Get();
 
 	if (main->patronJson.empty()) {
-		ui->textBrowser->setHtml("<p><a href=\"https://github.com/obs-rust/obs-studio\">"
-					 "https://github.com/obs-rust/obs-studio</a></p>");
+		ui->textBrowser->setHtml("<p><a href=\"https://github.com/NotADeveloper4665/Simulcast-Studio\">"
+					 "https://github.com/NotADeveloper4665/Simulcast-Studio</a></p>");
 		return;
 	}
 

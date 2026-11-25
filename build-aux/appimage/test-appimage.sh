@@ -328,13 +328,13 @@ fi
 
 PACKAGE_DATA="$APPDIR/usr/share/obs"
 PACKAGE_MODULES="$APPDIR/usr/lib/obs-modules"
-if [[ "$VERSION_LINE" == OBS-Studio-Rust* ]]; then
-    GUI_NAME=obs-studio-rust-gui
+if [[ "$VERSION_LINE" == "Simulcast Studio"* ]]; then
+    GUI_NAME=simulcast-studio
     CONFIG_NAME=obs-studio-rust
-    INSTANCE_PREFIX=@/io/github/obs_rust/OBSStudioRust
+    INSTANCE_PREFIX=@/io/github/notadeveloper4665/SimulcastStudio
     PACKAGE_DATA="$APPDIR/usr/share/obs-studio-rust"
     PACKAGE_MODULES="$APPDIR/usr/lib/obs-studio-rust/obs-modules"
-    APP_ID=io.github.obs_rust.OBSStudioRust
+    APP_ID=io.github.notadeveloper4665.SimulcastStudio
     [ -f "$APPDIR/$APP_ID.desktop" ] || fail "Rust desktop identity is missing"
     [ -f "$APPDIR/usr/bin/$GUI_NAME" ] || fail "Rust GUI executable is missing"
     grep -Fxq "Exec=$GUI_NAME" "$APPDIR/$APP_ID.desktop" || fail "Rust desktop starts the wrong executable"

@@ -3,9 +3,9 @@
 int obs_product_string(char *out, size_t size, const char *obs_version, const char *rust_version)
 {
 	if (rust_version) {
-		return snprintf(out, size, "OBS-Studio-Rust %s (based on OBS %s)", rust_version, obs_version);
+		return snprintf(out, size, "Simulcast Studio %s", rust_version);
 	}
-	return snprintf(out, size, "OBS %s", obs_version);
+	return snprintf(out, size, "Simulcast Studio %s", obs_version);
 }
 
 #define RUST_TAG_PREFIX "obs-studio-rust-v"
@@ -49,12 +49,12 @@ int obs_product_title(char *out, size_t size, const char *release_version, const
 	size_t ver_len, n_len;
 
 	if (release_version && *release_version) {
-		return snprintf(out, size, "OBS Studio Rust %s", release_version);
+		return snprintf(out, size, "Simulcast Studio %s", release_version);
 	}
 	if (parse_rust_describe(git_describe, &ver, &ver_len, &n, &n_len, &sha)) {
-		return snprintf(out, size, "OBS Studio Rust %.*s-dev+%.*s-%s", (int)ver_len, ver, (int)n_len, n, sha);
+		return snprintf(out, size, "Simulcast Studio %.*s-dev+%.*s-%s", (int)ver_len, ver, (int)n_len, n, sha);
 	}
-	return snprintf(out, size, "OBS Studio Rust dev");
+	return snprintf(out, size, "Simulcast Studio dev");
 }
 
 #undef RUST_TAG_PREFIX

@@ -146,7 +146,7 @@ def start_phase(out: Path) -> int:
         time.sleep(SHAKEDOWN_SECONDS)
         state = "running" if obs.poll() is None else f"exited {obs.returncode}"
         (out / "state").write_text(state + "\n")
-        subprocess.run(["pkill", "-TERM", "-f", "[u]sr/bin/obs-studio-rust-gui"], check=False)
+        subprocess.run(["pkill", "-TERM", "-f", "[u]sr/bin/simulcast-studio"], check=False)
         time.sleep(5)
         xvfb.terminate()
     endgroup()

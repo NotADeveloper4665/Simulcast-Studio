@@ -48,7 +48,7 @@
 /* Tray icons elsewhere: plain PNGs (#871). */
 #ifndef OBS_BASIC_TRAY_ACTIVE
 #define OBS_BASIC_TRAY_ACTIVE ":/res/images/tray_active.png"
-#define OBS_BASIC_TRAY_ACTIVE_THEME "obs-tray-active"
+#define OBS_BASIC_TRAY_ACTIVE_THEME "simulcast-studio-tray-active"
 #define OBS_BASIC_TRAY_IDLE ":/res/images/obs.png"
 #define OBS_BASIC_TRAY_PAUSED ":/res/images/obs_paused.png"
 #define OBS_BASIC_TRAY_MASK false
@@ -803,18 +803,18 @@ private:
 			if (trayIcon && trayIcon->isVisible()) {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_IDLE);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
-				trayIcon->setIcon(QIcon::fromTheme("obs-tray", trayIconFile));
+				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray", trayIconFile));
 			}
 		} else if (outputHandler->Active() && trayIcon && trayIcon->isVisible()) {
 			if (os_atomic_load_bool(&recording_paused)) {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_PAUSED);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
-				trayIcon->setIcon(QIcon::fromTheme("obs-tray-paused", trayIconFile));
+				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray-paused", trayIconFile));
 				TaskbarOverlaySetStatus(TaskbarOverlayStatusPaused);
 			} else {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_ACTIVE);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
-				trayIcon->setIcon(QIcon::fromTheme("obs-tray-active", trayIconFile));
+				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray-active", trayIconFile));
 				TaskbarOverlaySetStatus(TaskbarOverlayStatusActive);
 			}
 		}

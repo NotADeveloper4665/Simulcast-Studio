@@ -7,10 +7,10 @@ uv, and the upstream-pinned appimagetool from build-aux/appimage/build.py.
 
 ```sh
 sudo dnf install dnf5-plugins cmake ninja-build extra-cmake-modules \
-  clang git rustup x264-devel patchelf squashfs-tools pulseaudio-utils
+  clang git rustup rpm-build x264-devel patchelf squashfs-tools pulseaudio-utils
 sudo dnf builddep obs-studio
 git submodule update --init plugins/obs-browser plugins/obs-websocket
-cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0
+cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_RELEASE_VERSION=0.1.0
 cmake --build build_fedora --parallel 4
 DESTDIR="$PWD/Simulcast.AppDir" cmake --install build_fedora --strip
 uv run --no-project build-aux/appimage/assemble_fedora_appdir.py Simulcast.AppDir
@@ -20,6 +20,19 @@ ARCH=x86_64 appimagetool --no-appstream Simulcast.AppDir Simulcast-Studio-x86_64
 The AppImage targets Fedora 44 and uses the host's graphics and VA-API drivers.
 Run it directly or use `--appimage-extract-and-run` if FUSE is unavailable.
 On KDE Wayland, use Plasma's ScreenCast portal for screen and window capture.
+
+## Build the Fedora 44 x86-64 RPM
+
+After the native build above, run:
+
+```sh
+cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0
+sudo dnf install ./build_fedora/rpm/simulcast-studio-0.1.0-1.fc44.x86_64.rpm
+simulcast-studio
+```
+
+The RPM and AppImage use the same scene collections and profiles as the
+previous Simulcast Studio build.
 
 ## Set up both layouts
 

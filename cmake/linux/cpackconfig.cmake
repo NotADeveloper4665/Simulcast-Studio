@@ -7,7 +7,9 @@ include(cpackconfig_common)
 # The obs-rust brand ships its Linux packages under its own name (#3234 moved
 # this from cpackconfig_common).
 if(OBS_BRAND_RUST)
-  set(CPACK_PACKAGE_NAME obs-studio-rust)
+  set(CPACK_PACKAGE_NAME simulcast-studio)
+  set(CPACK_PACKAGE_VENDOR "${OBS_PROJECT_DEVELOPER_NAME}")
+  set(CPACK_PACKAGE_HOMEPAGE_URL "${OBS_PROJECT_HOMEPAGE}")
 endif()
 
 # Add GPLv2 license file to CPack

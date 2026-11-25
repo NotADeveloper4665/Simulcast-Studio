@@ -125,7 +125,7 @@ if(OBS_BRAND_RUST)
   if(NOT OBS_RUST_VERSION)
     message(FATAL_ERROR "Could not read the version from rust/libobs-rust/Cargo.toml")
   endif()
-  message(STATUS "OBS-Studio-Rust version: ${OBS_RUST_VERSION}")
+  message(STATUS "Simulcast Studio version: ${OBS_RUST_VERSION}")
   target_compile_definitions(obs-studio PRIVATE OBS_RUST_VERSION="${OBS_RUST_VERSION}")
   # The main window title (#1983) shows the release version, or for any other
   # build the newest obs-studio-rust-v* tag as a dev version. git describe runs

@@ -25,7 +25,7 @@ from set_runpaths import set_runpaths
 def main(appdir: Path) -> None:
     usr = appdir / "usr"
     libdir = usr / "lib"
-    if not (usr / "bin" / "obs-studio-rust-gui").is_file():
+    if not (usr / "bin" / "simulcast-studio").is_file():
         raise SystemExit("Stage a Fedora native CMake install into a fresh AppDir first.")
     (usr / "lib64").rename(libdir)
     (usr / "lib64").symlink_to("lib")

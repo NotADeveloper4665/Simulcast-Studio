@@ -161,7 +161,12 @@
         "ENABLE_BROWSER": false,
         "ENABLE_VLC": false,
         "ENABLE_QSV11": false,
-        "ENABLE_WAYLAND": true
+        "ENABLE_WAYLAND": true,
+        "CPACK_RPM_PACKAGE_LICENSE": "GPL-2.0-or-later",
+        "CPACK_RPM_PACKAGE_RELEASE_DIST": true,
+        "CPACK_RPM_PACKAGE_RELOCATABLE": false,
+        "CPACK_RPM_FILE_NAME": "RPM-DEFAULT",
+        "CPACK_STRIP_FILES": true
       }
     },
     {
