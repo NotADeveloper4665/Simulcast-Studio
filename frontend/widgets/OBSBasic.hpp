@@ -498,6 +498,8 @@ public:
 
 	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
 	QListWidget *verticalLayers = nullptr;
+	QWidget *verticalPreviewPanel = nullptr;
+	void UpdateVerticalPreview();
 	void InitDualStreamDock();
 	obs_canvas_t *GetVerticalCanvas() const;
 	void InitVerticalCanvasVideo();

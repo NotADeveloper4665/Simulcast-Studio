@@ -20,6 +20,32 @@
 #define DEBUG_AUDIO 0
 #define DEBUG_LAGGED_AUDIO 0
 
+static volatile long master_volume_percent = 100;
+
+void obs_set_master_volume_percent(int percent)
+{
+	os_atomic_set_long(&master_volume_percent, percent < 0 ? 0 : (percent > 100 ? 100 : percent));
+}
+
+static void apply_master_volume(struct audio_output_data *mixes, size_t channels, uint32_t mixers)
+{
+	const long percent = os_atomic_load_long(&master_volume_percent);
+	if (percent == 100)
+		return;
+
+	const float gain = (float)percent / 100.0f;
+	for (size_t mix = 0; mix < MAX_AUDIO_MIXES; mix++) {
+		if ((mixers & (1u << mix)) == 0)
+			continue;
+
+		for (size_t channel = 0; channel < channels; channel++) {
+			float *samples = mixes[mix].data[channel];
+			for (size_t frame = 0; frame < AUDIO_OUTPUT_FRAMES; frame++)
+				samples[frame] *= gain;
+		}
+	}
+}
+
 static void push_audio_tree(obs_source_t *parent, obs_source_t *source, void *p)
 {
 	struct obs_core_audio *audio = p;
@@ -551,6 +577,7 @@ bool audio_callback(void *param, uint64_t start_ts_in, uint64_t end_ts_in, uint6
 
 			pthread_mutex_unlock(&root_source->audio_buf_mutex);
 		}
+		apply_master_volume(mixes, channels, mixers);
 	}
 
 	/* ------------------------------------------------ */

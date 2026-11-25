@@ -433,8 +433,53 @@ void OBSBasic::StopExtraStreams()
 	}
 }
 
+void OBSBasic::UpdateVerticalPreview()
+{
+	if (verticalPreviewPanel && !verticalPreviewPanel->isHidden()) {
+		GetVerticalScene(true);
+	}
+}
+
 void OBSBasic::InitDualStreamDock()
 {
+	verticalPreviewPanel = new QWidget(ui->canvasEditor);
+	verticalPreviewPanel->setObjectName(QStringLiteral("verticalPreviewPanel"));
+	auto *previewLayout = new QVBoxLayout(verticalPreviewPanel);
+	previewLayout->setContentsMargins(0, 0, 0, 0);
+	previewLayout->setSpacing(0);
+	auto *title = new QLabel(tr("Vertical Preview (9:16)"), verticalPreviewPanel);
+	title->setAlignment(Qt::AlignCenter);
+	previewLayout->addWidget(title);
+
+	auto *portraitDisplay = new OBSQTDisplay(verticalPreviewPanel);
+	portraitDisplay->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	portraitDisplay->setMinimumWidth(140);
+	previewLayout->addWidget(portraitDisplay, 1);
+	ui->previewLayout->addWidget(verticalPreviewPanel, 1);
+	verticalPreviewPanel->hide();
+
+	connect(portraitDisplay, &OBSQTDisplay::DisplayCreated, this, [](OBSQTDisplay *display) {
+		obs_display_add_draw_callback(
+			display->GetDisplay(),
+			[](void *, uint32_t width, uint32_t height) {
+				OBSCanvasAutoRelease canvas = obs_get_canvas_by_name(VerticalCanvasName);
+				OBSSourceAutoRelease source = canvas ? obs_canvas_get_channel(canvas, 0) : nullptr;
+				if (!source || width == 0 || height == 0) {
+					return;
+				}
+
+				int x, y;
+				float scale;
+				GetScaleAndCenterPos(VerticalWidth, VerticalHeight, static_cast<int>(width),
+						     static_cast<int>(height), x, y, scale);
+				const int scaledWidth = std::max(1, static_cast<int>(scale * VerticalWidth));
+				const int scaledHeight = std::max(1, static_cast<int>(scale * VerticalHeight));
+				startRegion(x, y, scaledWidth, scaledHeight, 0.0f, VerticalWidth, 0.0f, VerticalHeight);
+				obs_source_video_render(source);
+				endRegion();
+			},
+			nullptr);
+	});
 	auto *dock = new QDockWidget(tr("Dual Stream"), this);
 	dock->setObjectName(QStringLiteral("dualStreamDock"));
 	auto *content = new QWidget(dock);
@@ -508,7 +553,11 @@ void OBSBasic::InitDualStreamDock()
 	connect(removeLayer, &QPushButton::clicked, this,
 		[changeLayer] { changeLayer([](obs_sceneitem_t *item) { obs_sceneitem_remove(item); }); });
 	connect(dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+		verticalPreviewPanel->setVisible(visible);
+		ui->previewLayout->setStretchFactor(ui->previewContainer, visible ? 2 : 0);
+		ui->previewLayout->setStretchFactor(ui->previewDisabledWidget, visible ? 2 : 0);
 		if (visible) {
+			UpdateVerticalPreview();
 			RefreshVerticalLayers();
 		}
 	});

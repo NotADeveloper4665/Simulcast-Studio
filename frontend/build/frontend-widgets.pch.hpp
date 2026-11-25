@@ -23,6 +23,10 @@
 #include <QFormLayout>
 #include <QListWidget>
 #include <QSpinBox>
+#include <QSlider>
+
+#include "frontend/components/Multiview.hpp"
+#include "frontend/utility/display-helpers.hpp"
 #include <QUrl>
 #include <QHBoxLayout>
 #include <QMenu>

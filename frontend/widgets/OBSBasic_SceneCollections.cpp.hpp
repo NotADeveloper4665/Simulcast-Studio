@@ -775,6 +775,7 @@ void OBSBasic::ActivateSceneCollection(SceneCollection &collection)
 	UpdateTitleBar();
 
 	OnEvent(OBS_FRONTEND_EVENT_SCENE_COLLECTION_LIST_CHANGED);
+	UpdateVerticalPreview();
 	if (verticalLayers)
 		RefreshVerticalLayers();
 	OnEvent(OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED);

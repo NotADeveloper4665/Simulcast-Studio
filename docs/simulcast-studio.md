@@ -24,7 +24,8 @@ On KDE Wayland, use Plasma's ScreenCast portal for screen and window capture.
 ## Set up both layouts
 
 1. Create your horizontal scenes and sources normally. Open **Docks → Dual
-   Stream**. The horizontal feed follows OBS Program, including studio-mode
+   Stream** to show the portrait preview alongside the normal preview. The
+   horizontal feed follows OBS Program, including studio-mode
    transitions.
 2. Use **Add Source** to reuse individual video sources on the vertical
    canvas. **Layout** sets position, bounds, fit or crop, and visibility.
@@ -39,6 +40,9 @@ On KDE Wayland, use Plasma's ScreenCast portal for screen and window capture.
    AAC encoder per destination. Each live destination consumes its configured
    upload bitrate. Destination settings and stream keys stay in memory for
    the current application session.
+5. Use **Master Volume** in the Audio Mixer to adjust all outgoing and
+   recorded audio tracks from 0% to 100%. Individual source settings stay
+   where you set them, and the master setting is saved for the next launch.
 
 ## Verify the AppImage
 
