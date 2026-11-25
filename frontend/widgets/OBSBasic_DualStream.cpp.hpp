@@ -20,8 +20,6 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QStandardPaths>
-#include <QStringList>
-
 #include <limits>
 
 namespace {
@@ -89,26 +87,6 @@ QString PreferredH264Encoder()
 			return encoderId;
 	}
 	return firstAvailable;
-}
-
-QString HardwareEncoderStatusText()
-{
-	const QString id = AvailableH264HardwareEncoder();
-	if (id.isEmpty()) {
-		QStringList available;
-		const char *encoderId = nullptr;
-		for (size_t index = 0; obs_enum_encoder_types(index, &encoderId); ++index) {
-			const char *codec = obs_get_encoder_codec(encoderId);
-			if (obs_get_encoder_type(encoderId) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0)
-				available.push_back(QString::fromUtf8(encoderId));
-		}
-		const QString detected = available.isEmpty() ? QObject::tr("none") : available.join(QStringLiteral(", "));
-		return QObject::tr("Hardware H.264 encoder: not detected. Available H.264 encoders: %1. New destinations and recordings will use software encoding when available. Check the GPU driver and OBS log, then restart Simulcast Studio.")
-			.arg(detected);
-	}
-	const char *displayName = obs_encoder_get_display_name(id.toUtf8().constData());
-	return QObject::tr("Hardware H.264 encoder detected: %1. New destinations and recordings will use it by default.")
-		.arg(QString::fromUtf8(displayName ? displayName : id.toUtf8().constData()));
 }
 
 bool GetVerticalVideoInfo(obs_video_info &video)
@@ -715,9 +693,6 @@ void OBSBasic::InitDualStreamDock()
 	auto *lowerLayer = addButton(layerOrderButtons, tr("Lower"));
 	auto *removeLayer = addButton(layerOrderButtons, tr("Remove Source"));
 
-	auto *hardwareStatus = new QLabel(HardwareEncoderStatusText(), content);
-	hardwareStatus->setWordWrap(true);
-	layout->addWidget(hardwareStatus);
 	layout->addWidget(new QLabel(tr("Stream Destinations"), content));
 	layout->addWidget(targets);
 	layout->addLayout(destinationButtons);
@@ -727,11 +702,6 @@ void OBSBasic::InitDualStreamDock()
 	auto *stopTarget = addButton(destinationButtons, tr("Stop"));
 	auto *startAllTargets = addButton(destinationButtons, tr("Start All"));
 	auto *stopAllTargets = addButton(destinationButtons, tr("Stop All Streams"));
-	auto *youtubeHelp = new QLabel(
-		tr("YouTube: create one live event, set the vertical preview to Encoder and RTMP(S) in Live Control Room, then add Horizontal with the horizontal key and Vertical with YouTube's second key. Start both destinations here before going live in Studio."), content);
-	youtubeHelp->setWordWrap(true);
-	layout->addWidget(youtubeHelp);
-
 	horizontalRecording = std::make_unique<DualRecording>();
 	verticalRecording = std::make_unique<DualRecording>();
 	horizontalRecording->vertical = false;
@@ -937,11 +907,8 @@ void OBSBasic::InitDualStreamDock()
 	});
 	connect(stopAllTargets, &QPushButton::clicked, this, [this] { StopExtraStreams(); });
 
-	auto updateDestinations = [this, targets, hardwareStatus, selectedDestination, canStart, startTarget, stopTarget,
+	auto updateDestinations = [this, targets, selectedDestination, canStart, startTarget, stopTarget,
 				   removeTarget] {
-		const QString detected = HardwareEncoderStatusText();
-		if (hardwareStatus->text() != detected)
-			hardwareStatus->setText(detected);
 		for (int row = 0; row < targets->count(); ++row) {
 			const auto &destination = *streamDestinations[static_cast<size_t>(row)];
 			QString status;

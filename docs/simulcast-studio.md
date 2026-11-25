@@ -45,20 +45,21 @@ previous Simulcast Studio build.
    inline portrait canvas. **Layout** provides numeric controls and
    **Properties** opens source settings. **Raise** and **Lower** change
    stacking. The portrait layout is saved in the scene collection.
-3. Check the **Hardware H.264 encoder** status in the Dual Stream dock. It
-   reports encoders that the loaded OBS plugins and Linux driver actually
-   exposed. New destinations and dual recordings prefer a detected hardware
-   encoder such as NVIDIA NVENC or Linux VA-API; otherwise they fall back to x264.
-   The encoder selector still lets you choose a different available encoder.
+3. In **Settings → Output**, check the hardware H.264 status beside the stream
+   encoder selector. It reports encoders that the loaded OBS plugins and Linux
+   driver exposed. New destinations and dual recordings prefer a detected
+   hardware encoder such as NVIDIA NVENC, Intel VA-API or Quick Sync; otherwise
+   they fall back to x264. The encoder selector still lets you choose another
+   available encoder.
 4. Under **Stream Destinations**, add each ingest server and stream key.
    Assign it to either orientation and select an H.264 encoder and bitrate.
    Select a destination and press **Start** or **Stop**, or use **Start All**
    and **Stop All Streams** for the configured destinations. For YouTube,
    create one live event, set the vertical preview to **Encoder** and **RTMP(S)**
    in Live Control Room, then use the horizontal event key for Horizontal and
-   YouTube's second vertical key for Vertical. Start both before going live in
-   Studio. Both outputs use the same event's RTMPS ingest URL and keep their
-   horizontal/vertical canvas assignment independent.
+   YouTube setup steps are also shown under **Settings → Stream**. Start both
+   before going live in Studio. Both outputs use the same event's RTMPS ingest
+   URL and keep their horizontal/vertical canvas assignment independent.
 5. The dock stores separate **Horizontal folder** and **Vertical folder** paths.
    Press **Record Both** to save the two canvases simultaneously as timestamped
    MKV files with H.264 video and AAC audio, then **Stop Recordings** to finish

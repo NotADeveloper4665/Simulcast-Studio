@@ -28,7 +28,7 @@ impl UsageSource for Fake {
         self.source
     }
 
-    fn whole(&mut self, adapter: &RenderAdapter) -> Utilization {
+    fn utilization(&mut self, adapter: &RenderAdapter) -> Utilization {
         match adapter {
             RenderAdapter::Pci(a) if a == self.pci => self.whole,
             _ => Utilization::Unavailable,

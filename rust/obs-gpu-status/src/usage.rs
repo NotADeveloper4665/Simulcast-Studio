@@ -1,7 +1,7 @@
 //! The status bar's `GPU: x%` label (obs-rust/obs-studio#1025).
 //!
 //! A [`Sampler`] asks its [`UsageSource`]s in order for the render
-//! adapter's whole-GPU utilization and takes the first reading (#1004).
+//! adapter's utilization and takes the first reading (#1004).
 //! [`crate::report::Report::readout`] turns the report's state and the
 //! sample into the label text.
 //!
@@ -62,6 +62,8 @@ pub enum Source {
     Nvml,
     /// amdgpu's `gpu_busy_percent` (#1024).
     Amdgpu,
+    /// Linux DRM fdinfo counters for OBS's own GPU engines (#1023).
+    DrmFdinfo,
     /// IOKit's `Device Utilization %` on macOS (#1026).
     Iokit,
     /// Windows PDH `GPU Engine` counters (#1022).
@@ -73,6 +75,7 @@ impl Source {
         match self {
             Self::Nvml => "nvml",
             Self::Amdgpu => "amdgpu",
+            Self::DrmFdinfo => "drm-fdinfo",
             Self::Iokit => "iokit",
             Self::Pdh => "pdh",
         }
@@ -83,14 +86,15 @@ impl Source {
 /// ([`crate::platform::usage_sources`]); tests give fakes.
 pub trait UsageSource: Send {
     fn source(&self) -> Source;
-    /// Whole-adapter utilization of `adapter`.
-    fn whole(&mut self, adapter: &RenderAdapter) -> Utilization;
+    /// Utilization of `adapter`, whole-device or process-scoped as documented
+    /// by the source.
+    fn utilization(&mut self, adapter: &RenderAdapter) -> Utilization;
 }
 
 /// One reading for the label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsageSample {
-    /// Whole-adapter percent, 0 to 100.
+    /// Device or process-scoped percent, 0 to 100, as reported by `source`.
     pub percent: u8,
     pub source: Source,
 }
@@ -145,7 +149,7 @@ impl Sampler {
     pub fn sample(&mut self, adapter: &RenderAdapter) -> Option<UsageSample> {
         for entry in self.sources.iter_mut().filter(|entry| !entry.demoted) {
             let start = (self.clock)();
-            let reading = entry.source.whole(adapter);
+            let reading = entry.source.utilization(adapter);
             let took = (self.clock)().saturating_duration_since(start);
             if took > SLOW_SAMPLE {
                 entry.slow.push(took);

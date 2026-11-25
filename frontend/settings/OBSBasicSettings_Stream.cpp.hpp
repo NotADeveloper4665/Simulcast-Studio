@@ -84,6 +84,9 @@ void OBSBasicSettings::InitStreamPage()
 	ui->connectedAccountText->setVisible(false);
 
 	int vertSpacing = ui->topStreamLayout->verticalSpacing();
+	auto *youtubeDualStreamInfo = new QLabel(QTStr("Basic.Settings.Stream.YouTubeDualStreamHelp"), this);
+	youtubeDualStreamInfo->setWordWrap(true);
+	ui->topStreamLayout->insertRow(1, youtubeDualStreamInfo);
 
 	QMargins m = ui->topStreamLayout->contentsMargins();
 	m.setBottom(vertSpacing / 2);
