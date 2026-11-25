@@ -3,6 +3,7 @@
 
 use crate::nvml::Nvml;
 use crate::{GpuDevice, Utilization};
+use std::time::Instant;
 
 #[allow(unsafe_code)] // libloading; see the module docs
 mod nvml_lib;
@@ -39,6 +40,10 @@ pub fn usage_sources() -> Vec<Box<dyn crate::usage::UsageSource>> {
     if cfg!(target_os = "linux") {
         sources.push(Box::new(AmdgpuSource));
     }
+    #[cfg(target_os = "linux")]
+    {
+        sources.push(Box::new(DrmFdinfoSource::default()));
+    }
     if cfg!(target_os = "macos") {
         sources.push(Box::new(IokitSource));
     }
@@ -56,7 +61,7 @@ impl crate::usage::UsageSource for NvmlSource {
         crate::usage::Source::Nvml
     }
 
-    fn whole(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
+    fn utilization(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
         crate::nvml::utilization(nvml(), adapter)
     }
 }
@@ -69,13 +74,48 @@ impl crate::usage::UsageSource for AmdgpuSource {
         crate::usage::Source::Amdgpu
     }
 
-    fn whole(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
+    fn utilization(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
         match adapter {
             crate::RenderAdapter::Pci(pci) => {
                 crate::amdgpu_busy_percent(std::path::Path::new("/"), pci)
             }
             _ => Utilization::Unavailable,
         }
+    }
+}
+
+/// Linux DRM fdinfo exposes cumulative engine counters for this OBS process.
+/// Unlike NVML and amdgpu's sysfs counter, this is OBS process activity, not
+/// the whole adapter's utilization.
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct DrmFdinfoSource {
+    previous: Vec<crate::fdinfo::FdinfoClient>,
+    sampled_at: Option<Instant>,
+}
+
+#[cfg(target_os = "linux")]
+impl crate::usage::UsageSource for DrmFdinfoSource {
+    fn source(&self) -> crate::usage::Source {
+        crate::usage::Source::DrmFdinfo
+    }
+
+    fn utilization(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
+        let crate::RenderAdapter::Pci(pci) = adapter else {
+            return Utilization::Unavailable;
+        };
+        let now = Instant::now();
+        let current = crate::fdinfo::read_fdinfo(std::path::Path::new("/proc/self/fdinfo"));
+        let Some(sampled_at) = self.sampled_at else {
+            self.previous = current;
+            self.sampled_at = Some(now);
+            return Utilization::Unavailable;
+        };
+        let elapsed = now.saturating_duration_since(sampled_at).as_nanos().min(u64::MAX as u128) as u64;
+        let utilization = crate::fdinfo::fdinfo_utilization(&self.previous, &current, pci, elapsed);
+        self.previous = current;
+        self.sampled_at = Some(now);
+        utilization
     }
 }
 
@@ -88,7 +128,7 @@ impl crate::usage::UsageSource for IokitSource {
         crate::usage::Source::Iokit
     }
 
-    fn whole(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
+    fn utilization(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
         match adapter {
             crate::RenderAdapter::RegistryId(id) => {
                 crate::iokit::device_utilization(&accelerator_statistics(*id))
@@ -114,7 +154,7 @@ impl crate::usage::UsageSource for PdhSource {
         crate::usage::Source::Pdh
     }
 
-    fn whole(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
+    fn utilization(&mut self, adapter: &crate::RenderAdapter) -> Utilization {
         match adapter {
             crate::RenderAdapter::Luid(luid) => self.0.utilization(*luid),
             _ => Utilization::Unavailable,

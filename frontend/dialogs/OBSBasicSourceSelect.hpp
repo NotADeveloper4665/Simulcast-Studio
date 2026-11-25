@@ -33,7 +33,7 @@ class OBSBasicSourceSelect : public QDialog {
 	Q_OBJECT
 
 public:
-	OBSBasicSourceSelect(OBSBasic *parent, undo_stack &undo_s);
+	OBSBasicSourceSelect(OBSBasic *parent, undo_stack &undo_s, OBSScene target = nullptr);
 	~OBSBasicSourceSelect();
 
 	OBSSource newSource;
@@ -49,6 +49,7 @@ private:
 	undo_stack &undo_s;
 
 	QPointer<QButtonGroup> sourceButtons;
+	OBSWeakSource targetScene;
 
 	std::vector<OBSSignal> signalHandlers;
 	static void obsSourceCreated(void *param, calldata_t *calldata);

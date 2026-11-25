@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "ui_OBSBasic.h"
 #include "OBSMainWindow.hpp"
 
@@ -46,7 +48,7 @@
 /* Tray icons elsewhere: plain PNGs (#871). */
 #ifndef OBS_BASIC_TRAY_ACTIVE
 #define OBS_BASIC_TRAY_ACTIVE ":/res/images/tray_active.png"
-#define OBS_BASIC_TRAY_ACTIVE_THEME "obs-tray-active"
+#define OBS_BASIC_TRAY_ACTIVE_THEME "simulcast-studio-tray-active"
 #define OBS_BASIC_TRAY_IDLE ":/res/images/obs.png"
 #define OBS_BASIC_TRAY_PAUSED ":/res/images/obs_paused.png"
 #define OBS_BASIC_TRAY_MASK false
@@ -478,6 +480,55 @@ private:
 	QList<QDockWidget *> MainDocks() const;
 
 public:
+	struct StreamDestination {
+		enum State { Idle, Connecting, Live, Stopping, Failed };
+
+		QString name;
+		QString server;
+		QString key;
+		QString encoder;
+		int bitrate = 4500;
+		bool vertical = false;
+		std::atomic<State> state{Idle};
+		OBSServiceAutoRelease service;
+		OBSOutputAutoRelease output;
+		OBSSignal started;
+		OBSSignal stopped;
+	};
+	struct DualRecording {
+		enum State { Idle, Recording, Stopping, Failed };
+		std::atomic<State> state{Idle};
+		OBSOutputAutoRelease output;
+		OBSSignal started;
+		OBSSignal stopped;
+		bool vertical = false;
+	};
+
+	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
+	std::unique_ptr<DualRecording> horizontalRecording;
+	std::unique_ptr<DualRecording> verticalRecording;
+	QListWidget *verticalLayers = nullptr;
+	QWidget *verticalPreviewPanel = nullptr;
+	OBSBasicPreview *verticalPreview = nullptr;
+	void UpdateVerticalPreview();
+	void InitDualStreamDock();
+	obs_canvas_t *GetVerticalCanvas() const;
+	void InitVerticalCanvasVideo();
+	OBSScene GetVerticalScene(bool create);
+	void RefreshVerticalLayers();
+	void AddVerticalLayer();
+	void EditVerticalLayer();
+	void AddStreamDestination(QListWidget *list);
+	void StartStreamDestination(StreamDestination &destination);
+	void StartDualRecording(DualRecording &recording);
+	void StopDualRecordings();
+	void ToggleDualRecordings();
+	bool DualRecordingsActive() const;
+	QString DualRecordingFolder(bool vertical) const;
+	void SaveDualRecordingFolders(const QString &horizontal, const QString &vertical);
+	bool ExtraStreamsActive() const;
+	void StopExtraStreams();
+
 	void AddDockWidget(QDockWidget *dock, Qt::DockWidgetArea area, bool extraBrowser = false);
 	void RemoveDockWidget(const QString &name);
 	bool IsDockObjectNameUsed(const QString &name);
@@ -769,18 +820,18 @@ private:
 			if (trayIcon && trayIcon->isVisible()) {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_IDLE);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
-				trayIcon->setIcon(QIcon::fromTheme("obs-tray", trayIconFile));
+				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray", trayIconFile));
 			}
 		} else if (outputHandler->Active() && trayIcon && trayIcon->isVisible()) {
 			if (os_atomic_load_bool(&recording_paused)) {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_PAUSED);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
-				trayIcon->setIcon(QIcon::fromTheme("obs-tray-paused", trayIconFile));
+				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray-paused", trayIconFile));
 				TaskbarOverlaySetStatus(TaskbarOverlayStatusPaused);
 			} else {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_ACTIVE);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
-				trayIcon->setIcon(QIcon::fromTheme("obs-tray-active", trayIconFile));
+				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray-active", trayIconFile));
 				TaskbarOverlaySetStatus(TaskbarOverlayStatusActive);
 			}
 		}

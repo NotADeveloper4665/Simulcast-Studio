@@ -6,7 +6,7 @@
 
 Simulcast Studio is a Linux-focused recording and livestreaming application based on [OBS Studio Rust](https://github.com/obs-rust/obs-studio) and [OBS Studio](https://github.com/obsproject/obs-studio). It is designed for creators who want independent horizontal and vertical layouts in one application.
 
-**Project status:** Active development. Fedora 44 x86-64 is the current packaging target. The active Simulcast development branch is [`simulcast-appimage`](https://github.com/NotADeveloper4665/Simulcast-Studio/tree/simulcast-appimage); the inherited upstream source is retained separately on `master`.
+**Project status:** Active development. Fedora 44 x86-64 is the current packaging target. The primary Simulcast development and release branch is `master`.
 
 ## Current development milestone
 
@@ -20,7 +20,7 @@ Simulcast Studio is a Linux-focused recording and livestreaming application base
 
 ## Development builds
 
-See [GitHub Actions](https://github.com/NotADeveloper4665/Simulcast-Studio/actions) and [Releases](https://github.com/NotADeveloper4665/Simulcast-Studio/releases) for available artifacts. A source commit is not evidence that a new RPM has been built or published.
+Successful Fedora 44 builds of `master` publish numbered **Simulcast Alpha Build** prereleases to [Releases](https://github.com/NotADeveloper4665/Simulcast-Studio/releases), with RPM and SHA256 checksums. Follow [GitHub Actions](https://github.com/NotADeveloper4665/Simulcast-Studio/actions) for build status.
 
 For an existing Fedora 44 RPM:
 
@@ -32,11 +32,11 @@ simulcast-studio
 For source builds, clone the development branch:
 
 ```bash
-git clone --branch simulcast-appimage --recurse-submodules https://github.com/NotADeveloper4665/Simulcast-Studio.git
+git clone --branch master --recurse-submodules https://github.com/NotADeveloper4665/Simulcast-Studio.git
 cd Simulcast-Studio
 ```
 
-See the [Fedora build instructions and dual-stream setup](https://github.com/NotADeveloper4665/Simulcast-Studio/blob/simulcast-appimage/docs/simulcast-studio.md) for dependencies, AppImage/RPM packaging and validation.
+See the [Fedora build instructions and dual-stream setup](https://github.com/NotADeveloper4665/Simulcast-Studio/blob/master/docs/simulcast-studio.md) for dependencies, AppImage/RPM packaging and validation.
 
 ## Roadmap
 

@@ -86,7 +86,7 @@ impl UsageSource for Timed {
     fn source(&self) -> Source {
         self.source
     }
-    fn whole(&mut self, _adapter: &RenderAdapter) -> Utilization {
+    fn utilization(&mut self, _adapter: &RenderAdapter) -> Utilization {
         let n = self.calls.fetch_add(1, Ordering::SeqCst) as usize;
         self.clock.advance(self.costs[n.min(self.costs.len() - 1)]);
         self.reading

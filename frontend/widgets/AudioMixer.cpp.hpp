@@ -121,6 +121,33 @@ AudioMixer::AudioMixer(QWidget *parent) : QFrame(parent)
 	mixerToolbar->setIconSize(QSize(16, 16));
 	mixerToolbar->setFloatable(false);
 
+	auto *masterRow = new QHBoxLayout();
+	masterRow->setContentsMargins(8, 4, 8, 4);
+	auto *masterLabel = new QLabel(tr("&Master Volume"), this);
+	auto *masterSlider = new QSlider(Qt::Horizontal, this);
+	auto *masterValue = new QLabel(this);
+	masterSlider->setObjectName(QStringLiteral("masterVolumeSlider"));
+	masterSlider->setAccessibleName(tr("Master Volume"));
+	masterSlider->setToolTip(tr("Output volume for all streams and recordings"));
+	masterSlider->setRange(0, 100);
+	masterLabel->setBuddy(masterSlider);
+	masterRow->addWidget(masterLabel);
+	masterRow->addWidget(masterSlider, 1);
+	masterRow->addWidget(masterValue);
+	mainLayout->addLayout(masterRow);
+
+	auto *config = App()->GetUserConfig();
+	config_set_default_int(config, "BasicWindow", "MasterVolumePercent", 100);
+	masterSlider->setValue(static_cast<int>(
+		std::clamp<int64_t>(config_get_int(config, "BasicWindow", "MasterVolumePercent"), 0, 100)));
+	auto applyVolume = [masterValue, config](int percent) {
+		obs_set_master_volume_percent(percent);
+		masterValue->setText(QString::number(percent) + QStringLiteral("%"));
+		config_set_int(config, "BasicWindow", "MasterVolumePercent", percent);
+	};
+	connect(masterSlider, &QSlider::valueChanged, this, applyVolume);
+	applyVolume(masterSlider->value());
+
 	mainLayout->addWidget(stackedMixerArea);
 	mainLayout->addWidget(mixerToolbar);
 

@@ -18,6 +18,9 @@
 
 #include "frontend/build/frontend-settings.pch.hpp"
 
+#include <QFileDialog>
+#include <QSignalBlocker>
+
 using namespace std;
 
 extern const char *get_simple_output_encoder(const char *encoder);
@@ -25,6 +28,30 @@ extern const char *get_simple_output_encoder(const char *encoder);
 extern bool restart;
 extern bool opt_allow_opengl;
 extern bool cef_js_avail;
+
+static QString HardwareH264EncoderInfo()
+{
+	QStringList hardware;
+	QStringList available;
+	const char *id = nullptr;
+	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
+		const char *codec = obs_get_encoder_codec(id);
+		if (obs_get_encoder_type(id) != OBS_ENCODER_VIDEO || !codec || strcmp(codec, "h264") != 0)
+			continue;
+		const QString encoderId = QString::fromUtf8(id).toLower();
+		const QString display = QString::fromUtf8(obs_encoder_get_display_name(id));
+		available.push_back(display);
+		if (encoderId.contains(QStringLiteral("nvenc")) || encoderId.contains(QStringLiteral("vaapi")) ||
+		    encoderId.contains(QStringLiteral("qsv")) || encoderId.contains(QStringLiteral("amf")) ||
+		    encoderId.contains(QStringLiteral("videotoolbox")))
+			hardware.push_back(display);
+	}
+	if (!hardware.isEmpty())
+		return QTStr("Basic.Settings.Output.Encoder.Hardware.Detected").arg(hardware.join(QStringLiteral(", ")));
+	return QTStr("Basic.Settings.Output.Encoder.Hardware.Missing")
+		.arg(available.isEmpty() ? QTStr("Basic.Settings.Output.Encoder.Hardware.None")
+					 : available.join(QStringLiteral(", ")));
+}
 
 static inline bool ResTooHigh(uint32_t cx, uint32_t cy)
 {
@@ -348,6 +375,36 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
 	ui->setupUi(this);
+
+	auto *dualFolders = new QGroupBox(tr("Dual Video Recording"), ui->outputPage);
+	auto *dualFolderLayout = new QFormLayout(dualFolders);
+	auto makeDualFolder = [this, dualFolders, dualFolderLayout](const QString &label, bool vertical) {
+		auto *row = new QWidget(dualFolders);
+		auto *rowLayout = new QHBoxLayout(row);
+		rowLayout->setContentsMargins(0, 0, 0, 0);
+		auto *field = new QLineEdit(main->DualRecordingFolder(vertical), row);
+		field->setObjectName(vertical ? QStringLiteral("dualVerticalRecordingPath")
+					      : QStringLiteral("dualHorizontalRecordingPath"));
+		auto *browse = new QPushButton(tr("Browse…"), row);
+		rowLayout->addWidget(field, 1);
+		rowLayout->addWidget(browse);
+		dualFolderLayout->addRow(label, row);
+		connect(browse, &QPushButton::clicked, this, [this, field, label] {
+			const QString path = QFileDialog::getExistingDirectory(this, label, field->text());
+			if (!path.isEmpty())
+				field->setText(path);
+		});
+		connect(field, &QLineEdit::textChanged, this, [this] {
+			if (!loading) {
+				dualFoldersChanged = true;
+				EnableApplyButton(true);
+			}
+		});
+		return field;
+	};
+	dualHorizontalPath = makeDualFolder(tr("Horizontal folder"), false);
+	dualVerticalPath = makeDualFolder(tr("Vertical folder"), true);
+	ui->verticalLayout_6->insertWidget(ui->verticalLayout_6->indexOf(ui->outputModePages), dualFolders);
 
 	main->EnableOutputs(false);
 
@@ -2287,6 +2344,27 @@ void OBSBasicSettings::LoadOutputSettings()
 	LoadAdvOutputStreamingSettings();
 	LoadAdvOutputStreamingEncoderProperties();
 
+	const QString hardwareEncoderInfo = HardwareH264EncoderInfo();
+	auto updateHardwareEncoderInfo = [this, &hardwareEncoderInfo](QFormLayout *form, QWidget *encoder,
+										const char *objectName) {
+		QLabel *info = findChild<QLabel *>(QString::fromLatin1(objectName));
+		if (!info) {
+			info = new QLabel(this);
+			info->setObjectName(QString::fromLatin1(objectName));
+			info->setWordWrap(true);
+			int row = -1;
+			QFormLayout::ItemRole role;
+			form->getWidgetPosition(encoder, &row, &role);
+			if (row < 0)
+				return;
+			form->insertRow(row + 1, info);
+		}
+		info->setText(hardwareEncoderInfo);
+	};
+	updateHardwareEncoderInfo(ui->simpleStreamingLayout, ui->simpleOutStrEncoder,
+				  "simulcastSimpleHardwareEncoderInfo");
+	updateHardwareEncoderInfo(ui->advOutTopLayout, ui->advOutEncoder, "simulcastAdvancedHardwareEncoderInfo");
+
 	const char *type = config_get_string(main->Config(), "AdvOut", "AudioEncoder");
 	if (!SetComboByValue(ui->advOutAEncoder, type)) {
 		ui->advOutAEncoder->setCurrentIndex(-1);
@@ -3163,6 +3241,12 @@ void OBSBasicSettings::LoadSettings(bool changedOnly)
 	if (!changedOnly || outputsChanged) {
 		LoadOutputSettings();
 	}
+	if (!changedOnly || dualFoldersChanged) {
+		const QSignalBlocker horizontalBlock(dualHorizontalPath);
+		const QSignalBlocker verticalBlock(dualVerticalPath);
+		dualHorizontalPath->setText(main->DualRecordingFolder(false));
+		dualVerticalPath->setText(main->DualRecordingFolder(true));
+	}
 	if (!changedOnly || audioChanged) {
 		LoadAudioSettings();
 	}
@@ -3915,6 +3999,9 @@ void OBSBasicSettings::SaveSettings()
 	}
 	if (outputsChanged) {
 		SaveOutputSettings();
+	}
+	if (dualFoldersChanged) {
+		main->SaveDualRecordingFolders(dualHorizontalPath->text().trimmed(), dualVerticalPath->text().trimmed());
 	}
 	if (audioChanged) {
 		SaveAudioSettings();

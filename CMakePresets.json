@@ -147,6 +147,29 @@
       }
     },
     {
+      "name": "fedora",
+      "displayName": "Fedora Native",
+      "description": "Fedora system libraries and RPM installation paths",
+      "inherits": ["ubuntu"],
+      "binaryDir": "${sourceDir}/build_fedora",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_INSTALL_PREFIX": "/usr",
+        "CMAKE_INSTALL_LIBDIR": "lib64",
+        "ENABLE_BROWSER": false,
+        "ENABLE_VLC": false,
+        "ENABLE_QSV11": false,
+        "ENABLE_WAYLAND": true,
+        "CPACK_RPM_PACKAGE_LICENSE": "GPL-2.0-or-later",
+        "CPACK_RPM_PACKAGE_RELEASE_DIST": true,
+        "CPACK_RPM_PACKAGE_RELOCATABLE": false,
+        "CPACK_RPM_FILE_NAME": "RPM-DEFAULT",
+        "CPACK_STRIP_FILES": true
+      }
+    },
+    {
       "name": "ubuntu-ci",
       "inherits": ["ubuntu"],
       "cacheVariables": {

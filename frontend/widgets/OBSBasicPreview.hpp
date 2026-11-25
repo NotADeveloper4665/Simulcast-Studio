@@ -49,6 +49,17 @@ class OBSBasicPreview : public OBSQTDisplay {
 	friend class SourceTreeItem;
 
 private:
+	struct PreviewGeometry {
+		int x, y, width, height;
+		float scale;
+	};
+	QSize canvasSize;
+	const char *canvasName = nullptr;
+	OBSScene EditingScene() const;
+	PreviewGeometry EditingGeometry() const;
+	vec2 EditingSize() const;
+	bool EditingVideoInfo(obs_video_info *info) const;
+
 	obs_sceneitem_crop startCrop;
 	vec2 startItemPos;
 	vec2 cropSize;
@@ -96,19 +107,19 @@ private:
 	std::vector<obs_sceneitem_t *> selectedItems;
 	std::mutex selectMutex;
 
-	static vec2 GetMouseEventPos(QMouseEvent *event);
+	vec2 GetMouseEventPos(QMouseEvent *event);
 	static bool FindSelected(obs_scene_t *scene, obs_sceneitem_t *item, void *param);
 	static bool DrawSelectedOverflow(obs_scene_t *scene, obs_sceneitem_t *item, void *param);
 	static bool DrawSelectedItem(obs_scene_t *scene, obs_sceneitem_t *item, void *param);
 	static bool DrawSelectionBox(float x1, float y1, float x2, float y2, gs_vertbuffer_t *box);
 
-	static OBSSceneItem GetItemAtPos(const vec2 &pos, bool selectBelow);
-	static bool SelectedAtPos(const vec2 &pos);
+	OBSSceneItem GetItemAtPos(const vec2 &pos, bool selectBelow);
+	bool SelectedAtPos(const vec2 &pos);
 
-	static void DoSelect(const vec2 &pos);
-	static void DoCtrlSelect(const vec2 &pos);
+	void DoSelect(const vec2 &pos);
+	void DoCtrlSelect(const vec2 &pos);
 
-	static vec3 GetSnapOffset(const vec3 &tl, const vec3 &br);
+	vec3 GetSnapOffset(const vec3 &tl, const vec3 &br);
 
 	void GetStretchHandleData(const vec2 &pos, bool ignoreGroup);
 
@@ -121,7 +132,7 @@ private:
 	void StretchItem(const vec2 &pos);
 	void RotateItem(const vec2 &pos);
 
-	static void SnapItemMovement(vec2 &offset);
+	void SnapItemMovement(vec2 &offset);
 	void MoveItems(const vec2 &pos);
 	void BoxItems(const vec2 &boxStart, const vec2 &pos);
 
@@ -137,6 +148,8 @@ public:
 	~OBSBasicPreview();
 
 	void Init();
+	void InitPortrait(const char *name, const QSize &size);
+	void ResetEditingState();
 
 	static OBSBasicPreview *Get();
 
@@ -210,6 +223,7 @@ public:
 	void UpdateYScrollBar(float cy);
 
 signals:
+	void portraitSelectionChanged();
 	void scalingChanged(float scalingAmount);
 	void fixedScalingChanged(bool isFixed);
 };

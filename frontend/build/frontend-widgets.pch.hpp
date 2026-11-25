@@ -18,6 +18,16 @@
 
 #include <QAction>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QListWidget>
+#include <QSpinBox>
+#include <QSlider>
+
+#include "frontend/components/Multiview.hpp"
+#include "frontend/utility/display-helpers.hpp"
+#include <QUrl>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QPointer>
@@ -53,6 +63,7 @@
 #include <dialogs/OBSBasicFilters.hpp>
 #include <dialogs/OBSBasicInteraction.hpp>
 #include <dialogs/OBSBasicProperties.hpp>
+#include <dialogs/OBSBasicSourceSelect.hpp>
 #include <dialogs/OBSBasicTransform.hpp>
 #include <models/SceneCollection.hpp>
 #include <settings/OBSBasicSettings.hpp>

@@ -975,11 +975,12 @@ OBSApp::OBSApp(int &argc, char **argv, profiler_name_store_t *store)
 	InitCrashHandler();
 #endif
 
-	sleepInhibitor = os_inhibit_sleep_create("OBS Video/audio");
+	sleepInhibitor = os_inhibit_sleep_create("Simulcast Studio Video/audio");
 
 	SetApplicationIcon();
 
 	setDesktopFileName(OBS_DESKTOP_ID);
+	setApplicationDisplayName(QStringLiteral("Simulcast Studio"));
 
 	pluginManager_ = std::make_unique<OBS::PluginManager>();
 }

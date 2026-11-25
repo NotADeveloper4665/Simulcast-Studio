@@ -1,0 +1,95 @@
+name: Simulcast Fedora RPM
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: simulcast-fedora-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.repository == 'NotADeveloper4665/Simulcast-Studio' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    timeout-minutes: 90
+    steps:
+      - name: Install Fedora build dependencies
+        run: |
+          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ rustup rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3
+          dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+          dnf -y builddep obs-studio
+          dnf -y install x264-devel
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Configure and compile
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup default 1.98.1
+          cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
+          cmake --build build_fedora --parallel 4
+      - name: Package and validate Fedora RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+          rpm_release=$((GITHUB_RUN_NUMBER + 5))
+          cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0 -D CPACK_RPM_PACKAGE_RELEASE="$rpm_release"
+          mkdir -p dist
+          cp build_fedora/rpm/simulcast-studio-*.fc44.x86_64.rpm dist/
+          rpm_file=$(find dist -maxdepth 1 -name '*.rpm')
+          test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
+          test "$(rpm -qp --qf '%{NAME} %{ARCH}' "$rpm_file")" = 'simulcast-studio x86_64'
+          rpm -qpl "$rpm_file" | tee /tmp/simulcast-package-files
+          grep -Fx /usr/bin/simulcast-studio /tmp/simulcast-package-files
+          dnf -y install "$rpm_file"
+          ldd /usr/bin/simulcast-studio | tee /tmp/simulcast-ldd
+          if grep -q 'not found' /tmp/simulcast-ldd; then exit 1; fi
+          QT_QPA_PLATFORM=offscreen simulcast-studio --version
+          (cd dist && sha256sum *.rpm > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulcast-studio-fedora44-x86_64
+          path: dist/*
+          if-no-files-found: error
+  release:
+    needs: build
+    if: github.repository == 'NotADeveloper4665/Simulcast-Studio' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: simulcast-studio-fedora44-x86_64
+          path: dist
+      - name: Publish verified alpha RPM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -c SHA256SUMS)
+          tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name')
+          latest=0
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^simulcast-alpha-build-([0-9]+)$ ]]; then
+              n="${BASH_REMATCH[1]}"
+              if (( n > latest )); then latest=$n; fi
+              target=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq '.object.sha')
+              if [[ "$target" == "$GITHUB_SHA" ]]; then
+                echo "This source commit already has a published alpha release."
+                exit 0
+              fi
+            fi
+          done <<< "$tags"
+          n=$((latest + 1))
+          tag="simulcast-alpha-build-$n"
+          printf 'Fedora 44 x86_64 development RPM.\n\nSource commit: %s\n\nValidated: compilation, RPM installation, library resolution and version smoke test. Live streaming and recording require target hardware validation.\n' "$GITHUB_SHA" > /tmp/release-notes.md
+          gh release create "$tag" dist/*.rpm dist/SHA256SUMS --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Simulcast Alpha Build $n" --notes-file /tmp/release-notes.md --prerelease

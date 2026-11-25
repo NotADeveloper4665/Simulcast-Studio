@@ -23,8 +23,8 @@ extern bool opt_minimize_tray;
 
 void OBSBasic::SystemTrayInit()
 {
-	trayIcon = new QSystemTrayIcon(QIcon::fromTheme("obs-tray", GetPlatformTrayIcon(TrayIconState::Idle)), this);
-	trayIcon->setToolTip("OBS Studio");
+	trayIcon = new QSystemTrayIcon(QIcon::fromTheme("simulcast-studio-tray", GetPlatformTrayIcon(TrayIconState::Idle)), this);
+	trayIcon->setToolTip("Simulcast Studio");
 
 	trayMenu = new QMenu(this);
 
@@ -92,7 +92,7 @@ void OBSBasic::SysTrayNotify(const QString &text, QSystemTrayIcon::MessageIcon n
 {
 	if (trayIcon && trayIcon->isVisible() && QSystemTrayIcon::supportsMessages()) {
 		QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::MessageIcon(n);
-		trayIcon->showMessage("OBS Studio", text, icon, 10000);
+		trayIcon->showMessage("Simulcast Studio", text, icon, 10000);
 	}
 }
 

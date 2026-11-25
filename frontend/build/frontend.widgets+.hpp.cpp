@@ -11,4 +11,5 @@
 #include "frontend/widgets/OBSBasicStatusBar.cpp.hpp"
 #include "frontend/widgets/OBSBasic_Browser.cpp.hpp"
 #include "frontend/widgets/OBSBasic_Canvases.cpp.hpp"
+#include "frontend/widgets/OBSBasic_DualStream.cpp.hpp"
 #include "frontend/widgets/OBSBasic_Clipboard.cpp.hpp"

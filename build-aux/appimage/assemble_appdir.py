@@ -197,7 +197,7 @@ def validate_compat(compat_lib: Path) -> None:
 
 def gui_selection(appdir: Path, libdir: Path) -> tuple[str, str, Path, Path]:
     """GUI name, APP_ID, DATA_ROOT and MODULE_ROOT, per what the build installed."""
-    if not (appdir / "usr/bin/obs-studio-rust-gui").is_file():
+    if not (appdir / "usr/bin/simulcast-studio").is_file():
         return ("obs", "com.obsproject.Studio", appdir / "usr/share/obs", libdir / "obs-modules")
     # AppDir aliases serve bundled dependency discovery and its test probes.
     # The installed Debian package retains only the private library locations.
@@ -206,8 +206,8 @@ def gui_selection(appdir: Path, libdir: Path) -> tuple[str, str, Path, Path]:
         if library.exists():
             (libdir / library.name).symlink_to(Path("obs-studio-rust") / library.name)
     return (
-        "obs-studio-rust-gui",
-        "io.github.obs_rust.OBSStudioRust",
+        "simulcast-studio",
+        "io.github.notadeveloper4665.SimulcastStudio",
         appdir / "usr/share/obs-studio-rust",
         private / "obs-modules",
     )

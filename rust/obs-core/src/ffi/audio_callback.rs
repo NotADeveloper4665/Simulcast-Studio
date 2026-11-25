@@ -22,6 +22,7 @@
 use std::ffi::{c_char, c_int, c_void};
 use std::marker::PhantomData;
 use std::ptr;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use crate::audio_callback::{self as core, Ignored, Tick};
 use crate::audio_mix::{AUDIO_OUTPUT_FRAMES, MAX_AUDIO_CHANNELS, MAX_AUDIO_MIXES, Step, TsInfo};
@@ -774,6 +775,14 @@ pub unsafe fn audio_callback_with<L: Calls>(
     result
 }
 
+static MASTER_VOLUME_PERCENT: AtomicI32 = AtomicI32::new(100);
+
+/// Sets the gain of the mixed program tracks before encoding.
+#[unsafe(no_mangle)]
+pub extern "C" fn obs_set_master_volume_percent(percent: c_int) {
+    MASTER_VOLUME_PERCENT.store(percent.clamp(0, 100), Ordering::Relaxed);
+}
+
 /// `audio_callback()`: one audio tick, which the audio output's thread
 /// calls with its mixes cleared.
 ///
@@ -792,5 +801,24 @@ pub unsafe extern "C" fn audio_callback(
 ) -> bool {
     let _ = param;
     // SAFETY: the caller's contract.
-    unsafe { audio_callback_with::<Libobs>(start_ts_in, end_ts_in, out_ts, mixers, mixes) }
+    let mixed = unsafe { audio_callback_with::<Libobs>(start_ts_in, end_ts_in, out_ts, mixers, mixes) };
+    let percent = MASTER_VOLUME_PERCENT.load(Ordering::Relaxed);
+    if mixed && percent < 100 {
+        let gain = percent as f32 / 100.0;
+        // SAFETY: the callback contract provides the mix and plane sizes.
+        // Each non-null plane is writable for this tick on the audio thread.
+        let tracks = unsafe { std::slice::from_raw_parts_mut(mixes, MAX_AUDIO_MIXES) };
+        for (index, track) in tracks.iter_mut().enumerate() {
+            if mixers & (1 << index) == 0 {
+                continue;
+            }
+            for plane in track.data.into_iter().filter(|plane| !plane.is_null()) {
+                let samples = unsafe { std::slice::from_raw_parts_mut(plane, AUDIO_OUTPUT_FRAMES) };
+                for sample in samples {
+                    *sample *= gain;
+                }
+            }
+        }
+    }
+    mixed
 }

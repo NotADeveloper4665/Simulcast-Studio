@@ -813,7 +813,7 @@ int main(int argc, char *argv[])
 #ifdef OBS_RUST_VERSION
 			std::cout << App()->GetProductString(false) << "\n";
 #else
-			std::cout << "OBS Studio - " << App()->GetVersionString(false) << "\n";
+			std::cout << "Simulcast Studio - " << App()->GetVersionString(false) << "\n";
 #endif
 			exit(0);
 		}

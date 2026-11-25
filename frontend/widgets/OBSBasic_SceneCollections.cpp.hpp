@@ -775,6 +775,9 @@ void OBSBasic::ActivateSceneCollection(SceneCollection &collection)
 	UpdateTitleBar();
 
 	OnEvent(OBS_FRONTEND_EVENT_SCENE_COLLECTION_LIST_CHANGED);
+	UpdateVerticalPreview();
+	if (verticalLayers)
+		RefreshVerticalLayers();
 	OnEvent(OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED);
 }
 
@@ -1236,6 +1239,7 @@ void OBSBasic::LoadData(obs_data_t *collectionData, SceneCollection &collection)
 
 	if (collection_canvases) {
 		canvases = OBS::Canvas::LoadCanvases(collection_canvases);
+		InitVerticalCanvasVideo();
 	}
 
 	if (!sources) {
@@ -1543,6 +1547,15 @@ void OBSBasic::SaveProjectDeferred()
 
 void OBSBasic::ClearSceneData()
 {
+	StopDualRecordings();
+	StopExtraStreams();
+	if (verticalPreview)
+		verticalPreview->ResetEditingState();
+	if (verticalLayers) {
+		const QSignalBlocker block(verticalLayers);
+		verticalLayers->clear();
+	}
+
 	disableSaving++;
 
 	setCursor(Qt::WaitCursor);

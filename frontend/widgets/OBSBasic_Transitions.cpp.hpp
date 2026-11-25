@@ -64,7 +64,7 @@ void OBSBasic::InitDefaultTransitions()
 	// obs-transitions failed to load for whatever reason.
 	if (!fadeTransition || !cutTransition) {
 		// FIXME: https://github.com/obsproject/obs-studio/issues/13394
-		throw "InitDefaultTransitions: Could not load default transitions. Try re-installing OBS Studio from "
+		throw "InitDefaultTransitions: Could not load default transitions. Try re-installing Simulcast Studio from "
 		      "<a href=\"https://obsproject.com/\">obsproject.com</a>.";
 	}
 

@@ -465,6 +465,9 @@ EXPORT int obs_reset_video(struct obs_video_info *ovi);
 EXPORT bool obs_reset_audio(const struct obs_audio_info *oai);
 EXPORT bool obs_reset_audio2(const struct obs_audio_info2 *oai);
 
+/** Set the gain of all mixed program audio tracks (0 to 100 percent). */
+EXPORT void obs_set_master_volume_percent(int percent);
+
 /** Gets the current video settings, returns false if no video */
 EXPORT bool obs_get_video_info(struct obs_video_info *ovi);
 

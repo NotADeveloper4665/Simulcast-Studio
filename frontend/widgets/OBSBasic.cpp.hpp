@@ -1081,6 +1081,7 @@ void OBSBasic::OBSInit()
 
 	/* The layout and the sizes the user gave its docks
 	 * (obs-rust/obs-studio#5230); none saved or not valid: the default. */
+	InitDualStreamDock();
 	if (!dockLayout->Load(App()->GetUserConfig(), "BasicWindow")) {
 		on_resetDocks_triggered(true);
 	}
@@ -1253,6 +1254,8 @@ void OBSBasic::OnFirstLoad()
 
 OBSBasic::~OBSBasic()
 {
+	StopDualRecordings();
+	StopExtraStreams();
 	// Normal shutdown clears the API before deleting the window. Startup
 	// failures must also detach callbacks before their main window disappears.
 	if (api) {
@@ -1789,7 +1792,7 @@ bool OBSBasic::isReadyToClose()
 bool OBSBasic::shouldPromptForClose()
 {
 	bool confirmOnExit = config_get_bool(App()->GetUserConfig(), "General", "ConfirmOnExit");
-	if (confirmOnExit && !closeWithoutPrompt_ && outputHandler && outputHandler->Active() && !clearingFailed) {
+	if (confirmOnExit && !closeWithoutPrompt_ && Active() && !clearingFailed) {
 		return true;
 	}
 
@@ -1831,6 +1834,8 @@ void OBSBasic::closeWindow()
 	 * To avoid such a case, destroy displays earlier than others such as
 	 * deleting browser docks. */
 	ui->preview->DestroyDisplay();
+	if (verticalPreview)
+		verticalPreview->DestroyDisplay();
 	if (program) {
 		program->DestroyDisplay();
 	}

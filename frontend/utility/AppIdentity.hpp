@@ -5,11 +5,11 @@
 
 #ifdef OBS_RUST_VERSION
 #define OBS_CONFIG_DIRECTORY "obs-studio-rust"
-#define OBS_DESKTOP_ID "io.github.obs_rust.OBSStudioRust"
+#define OBS_DESKTOP_ID "io.github.notadeveloper4665.SimulcastStudio"
 #define OBS_RUN_ONCE_NAME "OBSStudioRustCore"
 #define OBS_PORTABLE_RUN_ONCE_NAME "OBSStudioRustPortable"
-#define OBS_INSTANCE_SOCKET_PREFIX "/io/github/obs_rust/OBSStudioRust"
-#define OBS_WINDOWS_APP_ID L"io.github.obs_rust.OBSStudioRust"
+#define OBS_INSTANCE_SOCKET_PREFIX "/io.github.notadeveloper4665.SimulcastStudio"
+#define OBS_WINDOWS_APP_ID L"io.github.notadeveloper4665.SimulcastStudio"
 #define OBS_BSD_THREAD_NAME "OBS Rust runonce"
 #else
 #define OBS_CONFIG_DIRECTORY "obs-studio"

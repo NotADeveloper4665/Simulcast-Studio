@@ -196,13 +196,30 @@ impl Report {
                 details: vec![detail],
             };
         };
+        let process_scoped = usage.source == crate::usage::Source::DrmFdinfo;
         Readout {
             label: Text {
-                key: "Basic.StatusBar.Gpu.Usage",
+                key: if process_scoped {
+                    "Basic.StatusBar.Gpu.OBSUsage"
+                } else {
+                    "Basic.StatusBar.Gpu.Usage"
+                },
                 args: vec![usage.percent.to_string()],
-                english: format!("GPU: {}%", usage.percent),
+                english: if process_scoped {
+                    format!("OBS GPU: {}%", usage.percent)
+                } else {
+                    format!("GPU: {}%", usage.percent)
+                },
             },
-            details: vec![],
+            details: if process_scoped {
+                vec![Text {
+                    key: "Basic.StatusBar.Gpu.OBSUsage.Detail",
+                    args: vec![],
+                    english: "OBS process GPU activity from Linux DRM fdinfo; this is not total system GPU usage.".to_owned(),
+                }]
+            } else {
+                vec![]
+            },
         }
     }
 
