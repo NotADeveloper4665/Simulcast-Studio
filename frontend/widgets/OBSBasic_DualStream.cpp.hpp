@@ -108,6 +108,7 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 
 void OBSBasic::RefreshVerticalLayers()
 {
+	const QSignalBlocker block(verticalLayers);
 	verticalLayers->clear();
 	auto scene = GetVerticalScene(false);
 	if (!scene) {
@@ -123,57 +124,28 @@ void OBSBasic::RefreshVerticalLayers()
 			item->setData(Qt::UserRole,
 				      QVariant::fromValue(static_cast<qlonglong>(obs_sceneitem_get_id(layer))));
 			list->insertItem(0, item);
+			item->setSelected(obs_sceneitem_selected(layer));
 			return true;
 		},
 		verticalLayers);
+	const auto selected = verticalLayers->selectedItems();
+	if (!selected.isEmpty()) {
+		verticalLayers->setCurrentItem(selected.front(), QItemSelectionModel::NoUpdate);
+	}
 }
 
 void OBSBasic::AddVerticalLayer()
 {
-	QDialog dialog(this);
-	dialog.setWindowTitle(tr("Add Vertical Source"));
-	auto *form = new QFormLayout(&dialog);
-	auto *sources = new QComboBox(&dialog);
-	form->addRow(tr("Existing source"), sources);
-	form->addRow(DualStreamDialogButtons(dialog));
-
-	obs_enum_sources(
-		[](void *data, obs_source_t *source) {
-			if ((obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) && !obs_source_is_group(source)) {
-				auto *combo = static_cast<QComboBox *>(data);
-				combo->addItem(QString::fromUtf8(obs_source_get_name(source)),
-					       QString::fromUtf8(obs_source_get_uuid(source)));
-			}
-			return true;
-		},
-		sources);
-
-	if (!sources->count()) {
-		QMessageBox::information(this, tr("Vertical Scene"), tr("Create a video source in OBS first."));
-		return;
-	}
-	if (dialog.exec() != QDialog::Accepted) {
-		return;
-	}
-
-	OBSSourceAutoRelease source = obs_get_source_by_uuid(sources->currentData().toString().toUtf8().constData());
 	auto scene = GetVerticalScene(true);
-	auto *layer = source && scene ? obs_scene_add(scene, source) : nullptr;
-	if (!layer) {
-		QMessageBox::warning(this, tr("Vertical Scene"), tr("Could not add the source to the vertical scene."));
+	if (!scene) {
 		return;
 	}
-
-	obs_transform_info transform{};
-	obs_sceneitem_get_info2(layer, &transform);
-	transform.alignment = OBS_ALIGN_LEFT | OBS_ALIGN_TOP;
-	transform.bounds_alignment = OBS_ALIGN_CENTER;
-	transform.bounds_type = OBS_BOUNDS_SCALE_INNER;
-	vec2_set(&transform.bounds, VerticalWidth, VerticalHeight);
-	obs_sceneitem_set_info2(layer, &transform);
-	RefreshVerticalLayers();
-	verticalLayers->setCurrentRow(0);
-	SaveProject();
+	if (addWindow) {
+		addWindow->close();
+	}
+	addWindow = new OBSBasicSourceSelect(this, undo_s, scene);
+	addWindow->setAttribute(Qt::WA_DeleteOnClose);
+	addWindow->show();
 }
 
 void OBSBasic::EditVerticalLayer()
@@ -451,35 +423,15 @@ void OBSBasic::InitDualStreamDock()
 	title->setAlignment(Qt::AlignCenter);
 	previewLayout->addWidget(title);
 
-	auto *portraitDisplay = new OBSQTDisplay(verticalPreviewPanel);
-	portraitDisplay->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-	portraitDisplay->setMinimumWidth(140);
-	previewLayout->addWidget(portraitDisplay, 1);
+	verticalPreview = new OBSBasicPreview(verticalPreviewPanel);
+	verticalPreview->setObjectName(QStringLiteral("verticalPreview"));
+	verticalPreview->InitPortrait(VerticalCanvasName, QSize(VerticalWidth, VerticalHeight));
+	verticalPreview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	verticalPreview->setMinimumWidth(140);
+	previewLayout->addWidget(verticalPreview, 1);
 	ui->previewLayout->addWidget(verticalPreviewPanel, 1);
 	verticalPreviewPanel->hide();
 
-	connect(portraitDisplay, &OBSQTDisplay::DisplayCreated, this, [](OBSQTDisplay *display) {
-		obs_display_add_draw_callback(
-			display->GetDisplay(),
-			[](void *, uint32_t width, uint32_t height) {
-				OBSCanvasAutoRelease canvas = obs_get_canvas_by_name(VerticalCanvasName);
-				OBSSourceAutoRelease source = canvas ? obs_canvas_get_channel(canvas, 0) : nullptr;
-				if (!source || width == 0 || height == 0) {
-					return;
-				}
-
-				int x, y;
-				float scale;
-				GetScaleAndCenterPos(VerticalWidth, VerticalHeight, static_cast<int>(width),
-						     static_cast<int>(height), x, y, scale);
-				const int scaledWidth = std::max(1, static_cast<int>(scale * VerticalWidth));
-				const int scaledHeight = std::max(1, static_cast<int>(scale * VerticalHeight));
-				startRegion(x, y, scaledWidth, scaledHeight, 0.0f, VerticalWidth, 0.0f, VerticalHeight);
-				obs_source_video_render(source);
-				endRegion();
-			},
-			nullptr);
-	});
 	auto *dock = new QDockWidget(tr("Dual Stream"), this);
 	dock->setObjectName(QStringLiteral("dualStreamDock"));
 	auto *content = new QWidget(dock);
@@ -489,6 +441,22 @@ void OBSBasic::InitDualStreamDock()
 	auto *layerOrderButtons = new QHBoxLayout();
 	auto *targets = new QListWidget(content);
 	verticalLayers = new QListWidget(content);
+	verticalLayers->setObjectName(QStringLiteral("verticalSources"));
+	verticalLayers->setSelectionMode(QAbstractItemView::ExtendedSelection);
+	connect(verticalPreview, &OBSBasicPreview::portraitSelectionChanged, this, &OBSBasic::RefreshVerticalLayers);
+	connect(verticalLayers, &QListWidget::itemSelectionChanged, this, [this] {
+		auto scene = GetVerticalScene(false);
+		if (!scene) {
+			return;
+		}
+		for (int row = 0; row < verticalLayers->count(); ++row) {
+			const auto *entry = verticalLayers->item(row);
+			const auto id = entry->data(Qt::UserRole).toLongLong();
+			if (auto *item = obs_scene_find_sceneitem_by_id(scene, id)) {
+				obs_sceneitem_select(item, entry->isSelected());
+			}
+		}
+	});
 
 	auto addButton = [content](QHBoxLayout *row, const QString &title) {
 		auto *button = new QPushButton(title, content);
@@ -502,7 +470,7 @@ void OBSBasic::InitDualStreamDock()
 	layout->addLayout(layerOrderButtons);
 	auto *addLayer = addButton(layerButtons, tr("Add Source"));
 	auto *editLayer = addButton(layerButtons, tr("Layout"));
-	auto *preview = addButton(layerButtons, tr("Preview"));
+	auto *properties = addButton(layerButtons, tr("Properties"));
 	auto *raiseLayer = addButton(layerOrderButtons, tr("Raise"));
 	auto *lowerLayer = addButton(layerOrderButtons, tr("Lower"));
 	auto *removeLayer = addButton(layerOrderButtons, tr("Remove Source"));
@@ -517,12 +485,18 @@ void OBSBasic::InitDualStreamDock()
 
 	connect(addLayer, &QPushButton::clicked, this, &OBSBasic::AddVerticalLayer);
 	connect(editLayer, &QPushButton::clicked, this, &OBSBasic::EditVerticalLayer);
-	connect(preview, &QPushButton::clicked, this, [this] {
-		if (auto scene = GetVerticalScene(true)) {
-			OpenProjector(obs_scene_get_source(scene), -1, ProjectorType::Scene);
-			SaveProject();
+	auto openProperties = [this] {
+		auto scene = GetVerticalScene(false);
+		const auto *entry = verticalLayers->currentItem();
+		if (!scene || !entry) {
+			return;
 		}
-	});
+		if (auto *item = obs_scene_find_sceneitem_by_id(scene, entry->data(Qt::UserRole).toLongLong())) {
+			CreatePropertiesWindow(obs_sceneitem_get_source(item));
+		}
+	};
+	connect(properties, &QPushButton::clicked, this, openProperties);
+	connect(verticalLayers, &QListWidget::itemDoubleClicked, this, openProperties);
 	auto changeLayer = [this](auto change) {
 		const auto *selected = verticalLayers->currentItem();
 		auto scene = GetVerticalScene(false);
@@ -552,12 +526,56 @@ void OBSBasic::InitDualStreamDock()
 	});
 	connect(removeLayer, &QPushButton::clicked, this,
 		[changeLayer] { changeLayer([](obs_sceneitem_t *item) { obs_sceneitem_remove(item); }); });
+	verticalLayers->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(verticalLayers, &QWidget::customContextMenuRequested, this,
+		[this, openProperties, changeLayer](const QPoint &pos) {
+			auto scene = GetVerticalScene(false);
+			auto *entry = verticalLayers->itemAt(pos);
+			if (!scene || !entry) {
+				return;
+			}
+			verticalLayers->setCurrentItem(entry);
+			const auto id = entry->data(Qt::UserRole).toLongLong();
+			auto *item = obs_scene_find_sceneitem_by_id(scene, id);
+			if (!item) {
+				return;
+			}
+
+			QMenu menu(verticalLayers);
+			menu.addAction(tr("Properties"), this, openProperties);
+			menu.addAction(tr("Filters"), this, [this, changeLayer] {
+				changeLayer([this](obs_sceneitem_t *item) {
+					CreateFiltersWindow(obs_sceneitem_get_source(item));
+				});
+			});
+			menu.addAction(tr("Layout"), this, &OBSBasic::EditVerticalLayer);
+			auto *visibility = menu.addAction(tr("Visible"));
+			visibility->setCheckable(true);
+			visibility->setChecked(obs_sceneitem_visible(item));
+			connect(visibility, &QAction::triggered, this, [changeLayer](bool visible) {
+				changeLayer(
+					[visible](obs_sceneitem_t *item) { obs_sceneitem_set_visible(item, visible); });
+			});
+			auto *locked = menu.addAction(tr("Locked"));
+			locked->setCheckable(true);
+			locked->setChecked(obs_sceneitem_locked(item));
+			connect(locked, &QAction::triggered, this, [changeLayer](bool lock) {
+				changeLayer([lock](obs_sceneitem_t *item) { obs_sceneitem_set_locked(item, lock); });
+			});
+			scene = nullptr;
+			menu.exec(verticalLayers->viewport()->mapToGlobal(pos));
+		});
+
 	connect(dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
 		verticalPreviewPanel->setVisible(visible);
+		if (!visible) {
+			verticalPreview->ResetEditingState();
+		}
 		ui->previewLayout->setStretchFactor(ui->previewContainer, visible ? 2 : 0);
 		ui->previewLayout->setStretchFactor(ui->previewDisabledWidget, visible ? 2 : 0);
-		if (programWidget)
+		if (programWidget) {
 			ui->previewLayout->setStretchFactor(programWidget, visible ? 2 : 0);
+		}
 		if (visible) {
 			UpdateVerticalPreview();
 			RefreshVerticalLayers();

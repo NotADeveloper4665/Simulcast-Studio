@@ -189,13 +189,6 @@ std::optional<OBSSceneItem> setupExistingSource(std::string_view uuid, bool visi
 
 std::optional<OBSSource> setupNewSource(QWidget *parent, const char *id, const char *name)
 {
-	OBSBasic *main = OBSBasic::Get();
-	OBSScene scene = main->GetCurrentScene();
-
-	if (!scene) {
-		return std::nullopt;
-	}
-
 	OBSSourceAutoRelease source = obs_get_source_by_name(name);
 	if (source && parent) {
 		OBSMessageBox::information(parent, QTStr("NameExists.Title"), QTStr("NameExists.Text"));
@@ -213,12 +206,13 @@ std::optional<OBSSource> setupNewSource(QWidget *parent, const char *id, const c
 }
 } // namespace
 
-OBSBasicSourceSelect::OBSBasicSourceSelect(OBSBasic *parent, undo_stack &undo_s)
+OBSBasicSourceSelect::OBSBasicSourceSelect(OBSBasic *parent, undo_stack &undo_s, OBSScene target)
 	: QDialog(parent),
 	  ui(new Ui::OBSBasicSourceSelect),
 	  undo_s(undo_s),
 	  selectedTypeId(kRecentTypeId.toString()),
-	  sourceButtons(new QButtonGroup(this))
+	  sourceButtons(new QButtonGroup(this)),
+	  targetScene(target ? OBSGetWeakRef(obs_scene_get_source(target)) : OBSWeakSource())
 {
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
@@ -697,6 +691,14 @@ SourceSelectButton *OBSBasicSourceSelect::findButtonForUuid(const std::string &u
 
 void OBSBasicSourceSelect::createNew()
 {
+	auto *main = OBSBasic::Get();
+	const bool portrait = !!targetScene;
+	OBSSourceAutoRelease target = portrait ? obs_weak_source_get_source(targetScene)
+					       : obs_source_get_ref(main->GetCurrentSceneSource());
+	OBSScene scene = obs_scene_from_source(target);
+	if (!scene) {
+		return;
+	}
 	bool visible = ui->sourceVisible->isChecked();
 
 	if (selectedTypeId.compare(kRecentTypeId) == 0) {
@@ -722,23 +724,29 @@ void OBSBasicSourceSelect::createNew()
 		return;
 	}
 
-	std::optional<OBSSceneItem> addResult = setupExistingSource(obs_source_get_uuid(createdSource), visible, false);
+	std::optional<OBSSceneItem> addResult =
+		setupExistingSource(obs_source_get_uuid(createdSource), visible, false, nullptr, scene);
 	if (!addResult.has_value()) {
 		return;
 	}
 
 	OBSSceneItem item = addResult.value();
 
-	OBSBasic *main = reinterpret_cast<OBSBasic *>(App()->GetMainWindow());
-	std::string sceneUuid = obs_source_get_uuid(main->GetCurrentSceneSource());
-	auto undo = [sceneUuid](const std::string &uuid) {
+	std::string sceneUuid = obs_source_get_uuid(target);
+	auto undo = [sceneUuid, portrait](const std::string &uuid) {
 		OBSBasic *main = OBSBasic::Get();
 
 		OBSSourceAutoRelease source = obs_get_source_by_uuid(uuid.c_str());
 		obs_source_remove(source);
+		if (portrait) {
+			main->RefreshVerticalLayers();
+			main->SaveProject();
+		}
 
 		OBSSourceAutoRelease sceneSource = obs_get_source_by_uuid(sceneUuid.c_str());
-		main->SetCurrentScene(sceneSource.Get(), true);
+		if (!portrait) {
+			main->SetCurrentScene(sceneSource.Get(), true);
+		}
 	};
 	OBSDataAutoRelease wrapper = obs_data_create();
 	obs_data_set_string(wrapper, "id", id);
@@ -746,11 +754,17 @@ void OBSBasicSourceSelect::createNew()
 	obs_data_set_string(wrapper, "name", newName.c_str());
 	obs_data_set_bool(wrapper, "visible", visible);
 
-	auto redo = [sceneUuid](const std::string &uuid) {
+	auto redo = [sceneUuid, portrait](const std::string &uuid) {
 		OBSBasic *main = OBSBasic::Get();
 
 		OBSSourceAutoRelease sceneSource = obs_get_source_by_uuid(sceneUuid.c_str());
-		main->SetCurrentScene(sceneSource.Get(), true);
+		if (!portrait) {
+			main->SetCurrentScene(sceneSource.Get(), true);
+		}
+
+		if (!sceneSource) {
+			return;
+		}
 
 		OBSDataAutoRelease dat = obs_data_create_from_json(uuid.c_str());
 
@@ -763,7 +777,8 @@ void OBSBasicSourceSelect::createNew()
 		OBSSource source = createResult.value();
 
 		std::optional<OBSSceneItem> addResult =
-			setupExistingSource(obs_source_get_uuid(source), obs_data_get_bool(dat, "visible"), false);
+			setupExistingSource(obs_source_get_uuid(source), obs_data_get_bool(dat, "visible"), false,
+					    nullptr, OBSScene(obs_scene_from_source(sceneSource)));
 		if (!addResult.has_value()) {
 			return;
 		}
@@ -771,10 +786,18 @@ void OBSBasicSourceSelect::createNew()
 		OBSSceneItem item = addResult.value();
 
 		obs_sceneitem_set_id(item, static_cast<int64_t>(obs_data_get_int(dat, "item_id")));
+		if (portrait) {
+			main->RefreshVerticalLayers();
+			main->SaveProject();
+		}
 	};
 	undo_s.add_action(QTStr("Undo.Add").arg(QString::fromStdString(newName)), undo, redo,
 			  std::string(obs_source_get_uuid(createdSource)), std::string(obs_data_get_json(wrapper)));
 
+	if (portrait) {
+		main->RefreshVerticalLayers();
+		main->SaveProject();
+	}
 	main->CreatePropertiesWindow(createdSource);
 
 	close();
@@ -784,6 +807,46 @@ void OBSBasicSourceSelect::addExisting(const std::string &uuid, bool visible)
 {
 	OBSSourceAutoRelease source = obs_get_source_by_uuid(uuid.c_str());
 	if (!source) {
+		return;
+	}
+
+	if (targetScene) {
+		OBSSourceAutoRelease target = obs_weak_source_get_source(targetScene);
+		OBSScene scene = obs_scene_from_source(target);
+		if (!scene) {
+			return;
+		}
+		auto added = setupExistingSource(uuid, visible, false, nullptr, scene);
+		if (!added || !*added) {
+			return;
+		}
+		auto *main = OBSBasic::Get();
+		const auto itemId = obs_sceneitem_get_id(*added);
+		const auto targetRef = targetScene;
+		auto undo = [targetRef, itemId, main](const std::string &) {
+			OBSSourceAutoRelease target = obs_weak_source_get_source(targetRef);
+			if (auto *scene = obs_scene_from_source(target)) {
+				obs_sceneitem_remove(obs_scene_find_sceneitem_by_id(scene, itemId));
+				main->RefreshVerticalLayers();
+				main->SaveProject();
+			}
+		};
+		auto redo = [targetRef, itemId, main, uuid, visible](const std::string &) {
+			OBSSourceAutoRelease target = obs_weak_source_get_source(targetRef);
+			OBSScene scene = obs_scene_from_source(target);
+			if (!scene) {
+				return;
+			}
+			auto added = setupExistingSource(uuid, visible, false, nullptr, scene);
+			if (added && *added) {
+				obs_sceneitem_set_id(*added, itemId);
+			}
+			main->RefreshVerticalLayers();
+			main->SaveProject();
+		};
+		undo_s.add_action(QTStr("Undo.Add").arg(obs_source_get_name(source)), undo, redo, "", "");
+		main->RefreshVerticalLayers();
+		main->SaveProject();
 		return;
 	}
 

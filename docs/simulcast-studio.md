@@ -26,8 +26,8 @@ On KDE Wayland, use Plasma's ScreenCast portal for screen and window capture.
 After the native build above, run:
 
 ```sh
-cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0
-sudo dnf install ./build_fedora/rpm/simulcast-studio-0.1.0-1.fc44.x86_64.rpm
+cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0 -D CPACK_RPM_PACKAGE_RELEASE=2
+sudo dnf install ./build_fedora/rpm/simulcast-studio-0.1.0-2.fc44.x86_64.rpm
 simulcast-studio
 ```
 
@@ -40,10 +40,11 @@ previous Simulcast Studio build.
    Stream** to show the portrait preview alongside the normal preview. The
    horizontal feed follows OBS Program, including studio-mode
    transitions.
-2. Use **Add Source** to reuse individual video sources on the vertical
-   canvas. **Layout** sets position, bounds, fit or crop, and visibility.
-   **Raise** and **Lower** change stacking. **Preview** opens a windowed
-   portrait projector. The vertical layout is saved in the scene collection.
+2. Use **Add Source** to create or reuse sources in the portrait scene.
+   Select and drag, resize, rotate, or Alt-drag to crop directly in the
+   inline portrait canvas. **Layout** provides numeric controls and
+   **Properties** opens source settings. **Raise** and **Lower** change
+   stacking. The portrait layout is saved in the scene collection.
 3. Under **Stream Destinations**, add each ingest server and stream key.
    Assign it to either orientation and select an H.264 encoder and bitrate.
    Select a destination and press **Start** or **Stop**. Repeat for every

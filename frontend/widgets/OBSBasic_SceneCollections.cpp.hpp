@@ -1548,8 +1548,12 @@ void OBSBasic::SaveProjectDeferred()
 void OBSBasic::ClearSceneData()
 {
 	StopExtraStreams();
-	if (verticalLayers)
+	if (verticalPreview)
+		verticalPreview->ResetEditingState();
+	if (verticalLayers) {
+		const QSignalBlocker block(verticalLayers);
 		verticalLayers->clear();
+	}
 
 	disableSaving++;
 

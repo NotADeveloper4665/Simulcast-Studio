@@ -63,6 +63,7 @@
 #include <dialogs/OBSBasicFilters.hpp>
 #include <dialogs/OBSBasicInteraction.hpp>
 #include <dialogs/OBSBasicProperties.hpp>
+#include <dialogs/OBSBasicSourceSelect.hpp>
 #include <dialogs/OBSBasicTransform.hpp>
 #include <models/SceneCollection.hpp>
 #include <settings/OBSBasicSettings.hpp>
