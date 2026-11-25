@@ -16,9 +16,13 @@ Simulcast Studio is a Linux-focused recording and livestreaming application base
 - Hardware H.264 encoder detection and software fallback.
 - Master volume controls for outgoing and recorded audio.
 - Fedora RPM and AppImage packaging.
-- Latest source change: dual recording paths in **Settings → Output**, with a single **Record Both / Stop Both** control beneath normal recording. This change is committed but the updated application package has not yet been verified.
+- Latest source change: dual recording paths in **Settings → Output**, with a single **Record Both / Stop Both** control beneath normal recording. Alpha Build 1 includes this change; live recording and streaming still need target-hardware validation.
 
 ## Development builds
+
+[**Download Simulcast Studio alpha builds**](https://github.com/NotADeveloper4665/Simulcast-Studio/releases)
+
+Fedora 44 RPMs are available first. Additional Fedora 44 AppImage, Ubuntu 26.04 / Debian testing DEB and experimental Apple Silicon DMG assets are attached to the matching source release after individual build and smoke checks pass. Debian 13 is not a native target because this source requires FFmpeg 8. The macOS build is ad-hoc signed, not notarized, and excludes virtual camera and browser plugins.
 
 Successful Fedora 44 builds of `master` publish numbered **Simulcast Alpha Build** prereleases to [Releases](https://github.com/NotADeveloper4665/Simulcast-Studio/releases), with RPM and SHA256 checksums. Follow [GitHub Actions](https://github.com/NotADeveloper4665/Simulcast-Studio/actions) for build status.
 

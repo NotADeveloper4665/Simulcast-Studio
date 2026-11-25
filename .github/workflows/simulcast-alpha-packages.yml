@@ -1,0 +1,221 @@
+name: Simulcast additional alpha packages
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/simulcast-alpha-packages.yml']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing alpha release tag to supplement
+        default: simulcast-alpha-build-1
+        required: true
+  workflow_run:
+    workflows: [Simulcast Fedora RPM]
+    types: [completed]
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'NotADeveloper4665/Simulcast-Studio' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == workflow_run ]]; then
+            tag=''
+            for candidate in $(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name'); do
+              [[ "$candidate" =~ ^simulcast-alpha-build-[0-9]+$ ]] || continue
+              sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$candidate" --jq '.object.sha')
+              if [[ "$sha" == "$SOURCE_SHA" ]]; then tag="$candidate"; break; fi
+            done
+            test -n "$tag"
+          else
+            tag="$INPUT_TAG"
+            if [[ -z "$tag" ]]; then tag=simulcast-alpha-build-1; fi
+          fi
+          [[ "$tag" =~ ^simulcast-alpha-build-[0-9]+$ ]]
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq 'select(.object.type=="commit") | .object.sha')
+          [[ "$sha" =~ ^[a-f0-9]{40}$ ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+  appimage:
+    needs: source
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    timeout-minutes: 90
+    steps:
+      - run: |
+          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3 patchelf squashfs-tools pulseaudio-utils pipewire qt6-qtsvg qt6-qtwayland
+          dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+          dnf -y builddep obs-studio
+          dnf -y install x264-devel
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Build and package AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_HOME=/opt/simulcast-cargo RUSTUP_HOME=/opt/simulcast-rustup
+          export PATH="$CARGO_HOME/bin:$PATH"
+          curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
+          sh /tmp/rustup.sh -y --profile minimal --default-toolchain 1.98.1 --no-modify-path
+          rustup component add rustfmt clippy
+          cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
+          cmake --build build_fedora --parallel 4
+          DESTDIR="$PWD/Simulcast.AppDir" cmake --install build_fedora --strip
+          QT_QPA_PLATFORM=offscreen python3 build-aux/appimage/assemble_fedora_appdir.py Simulcast.AppDir
+          curl -fsSL https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o appimagetool
+          echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool' | sha256sum -c -
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract >/dev/null
+          mkdir -p dist
+          ARCH=x86_64 squashfs-root/AppRun --no-appstream Simulcast.AppDir dist/Simulcast-Studio-Fedora44-x86_64.AppImage
+          rm -rf squashfs-root
+          QT_QPA_PLATFORM=offscreen APPIMAGE_EXTRACT_AND_RUN=1 dist/Simulcast-Studio-Fedora44-x86_64.AppImage --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+  deb:
+    needs: source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:26.04
+            label: Ubuntu26.04
+          - image: debian:testing
+            label: Debian-testing
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    timeout-minutes: 90
+    steps:
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y ca-certificates curl git cmake ninja-build clang build-essential pkg-config dpkg-dev file
+          apt-get install -y --no-install-recommends extra-cmake-modules libglib2.0-dev libcurl4-openssl-dev libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libjansson-dev libx11-xcb-dev libgles2-mesa-dev libwayland-dev libpipewire-0.3-dev libpulse-dev libx264-dev libmbedtls-dev libgl1-mesa-dev uthash-dev libsimde-dev libluajit-5.1-dev python3-dev libx11-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xinerama0-dev libxcb-composite0-dev libxinerama-dev libxcb1-dev libxcb-xfixes0-dev swig libcmocka-dev libxss-dev libglvnd-dev libxkbcommon-dev libatk1.0-dev libatk-bridge2.0-dev libxcomposite-dev libxdamage-dev libasound2-dev libfontconfig-dev libfreetype6-dev libjack-jackd2-dev libsndio-dev libspeexdsp-dev libudev-dev libv4l-dev libva-dev libpci-dev libdrm-dev nlohmann-json3-dev libwebsocketpp-dev libasio-dev libqrcodegencpp-dev libffmpeg-nvenc-dev librist-dev libsrt-gnutls-dev qt6-base-dev libqt6svg6-dev qt6-base-private-dev libvpl-dev libvpl2 uuid-dev
+          if apt-cache show libfdk-aac-dev >/dev/null 2>&1; then apt-get install -y libfdk-aac-dev; fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Build native DEB
+        shell: bash
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          export CARGO_HOME=/opt/simulcast-cargo RUSTUP_HOME=/opt/simulcast-rustup
+          export PATH="$CARGO_HOME/bin:$PATH"
+          curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
+          sh /tmp/rustup.sh -y --profile minimal --default-toolchain 1.98.1 --no-modify-path
+          rustup component add rustfmt clippy
+          cmake --preset ubuntu -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0 -DENABLE_BROWSER=OFF -DENABLE_VLC=OFF -DENABLE_QSV11=OFF
+          cmake --build build_ubuntu --parallel 4
+          cpack --config build_ubuntu/CPackConfig.cmake -G DEB -B build_ubuntu/deb -D CPACK_PACKAGE_VERSION=0.1.0 -D CPACK_DEBIAN_PACKAGE_RELEASE="$GITHUB_RUN_NUMBER" -D CPACK_DEBIAN_DEBUGINFO_PACKAGE=OFF -D CPACK_STRIP_FILES=ON
+          mkdir -p dist
+          deb=$(find build_ubuntu/deb -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = simulcast-studio
+          test "$(dpkg-deb -f "$deb" Architecture)" = amd64
+          cp "$deb" "dist/Simulcast-Studio-$LABEL-amd64.deb"
+          apt-get install -y "./dist/Simulcast-Studio-$LABEL-amd64.deb"
+          ldd /usr/bin/simulcast-studio | tee /tmp/ldd
+          if grep -q 'not found' /tmp/ldd; then exit 1; fi
+          QT_QPA_PLATFORM=offscreen simulcast-studio --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-deb-${{ matrix.label }}
+          path: dist/*.deb
+          if-no-files-found: error
+  macos:
+    needs: source
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Build Apple Silicon application
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup component add --toolchain 1.98.1 rustfmt clippy
+          cmake --preset macos -DCMAKE_OSX_ARCHITECTURES=arm64 -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DENABLE_BROWSER=OFF -DENABLE_VIRTUALCAM=OFF -DSPARKLE_APPCAST_URL= -DSPARKLE_PUBLIC_KEY= -DOBS_CODESIGN_IDENTITY=-
+          cmake --build build_macos --config RelWithDebInfo --target obs-studio --parallel 4
+          app="build_macos/frontend/RelWithDebInfo/Simulcast Studio.app"
+          test -d "$app"
+          exe="$app/Contents/MacOS/Simulcast Studio"
+          test -x "$exe"
+          file "$exe" | grep arm64
+          codesign --verify --deep --strict "$app"
+          "$exe" --version
+          mkdir -p dist /tmp/simulcast-dmg
+          ditto "$app" "/tmp/simulcast-dmg/Simulcast Studio.app"
+          ln -s /Applications /tmp/simulcast-dmg/Applications
+          hdiutil create -volname 'Simulcast Studio' -srcfolder /tmp/simulcast-dmg -format UDZO -ov dist/Simulcast-Studio-macOS-arm64.dmg
+          hdiutil verify dist/Simulcast-Studio-macOS-arm64.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha-macos-arm64
+          path: dist/*.dmg
+          if-no-files-found: error
+  publish:
+    needs: [source, appimage, deb, macos]
+    if: always() && needs.source.result == 'success' && !cancelled()
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: supplement-${{ needs.source.outputs.tag }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: alpha-*
+          merge-multiple: true
+          path: dist
+      - name: Add validated packages to existing alpha release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.source.outputs.tag }}
+          SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/*.AppImage dist/*.deb dist/*.dmg)
+          if (( ${#assets[@]} == 0 )); then echo 'No additional validated packages'; exit 1; fi
+          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')
+          test "$current" = "$SHA"
+          mkdir -p previous
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir previous
+          (cd dist && sha256sum *.AppImage *.deb *.dmg) > /tmp/new-sums
+          test -s /tmp/new-sums
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${assets[@]}"
+          cat previous/SHA256SUMS /tmp/new-sums | awk '{a[$2]=$0} END {for (f in a) print a[f]}' | sort -k2 > dist/SHA256SUMS
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/SHA256SUMS
