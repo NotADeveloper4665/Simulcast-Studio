@@ -100,3 +100,11 @@ independently and confirm the other keeps receiving frames and audio. Use
 `ffprobe` to verify the configured horizontal resolution and 1080 × 1920
 vertical resolution. Repeat with a third listener assigned to either
 orientation to verify that two destinations can use the same canvas.
+
+## Dual Stream dock regression check
+
+With the app running and Dual Stream hidden, open **Docks → Dual Stream**.
+The portrait preview and its layer list must appear immediately, without a restart.
+Hide it through the menu, reopen it, close it with its dock close button, and
+reopen it again. Repeat in Studio Mode and after restoring a saved dock layout.
+Verify that existing portrait sources and their transforms are unchanged.

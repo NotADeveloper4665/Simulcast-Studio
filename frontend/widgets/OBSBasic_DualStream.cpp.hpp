@@ -835,7 +835,9 @@ void OBSBasic::InitDualStreamDock()
 			menu.exec(verticalLayers->viewport()->mapToGlobal(pos));
 		});
 
-	connect(dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+	// The Docks menu uses setupDockAction(), which deliberately blocks dock signals.
+	// Share the same preview synchronization with menu toggles and normal visibility changes.
+	auto syncVerticalPreview = [this](bool visible) {
 		verticalPreviewPanel->setVisible(visible);
 		if (!visible) {
 			verticalPreview->ResetEditingState();
@@ -849,7 +851,8 @@ void OBSBasic::InitDualStreamDock()
 			UpdateVerticalPreview();
 			RefreshVerticalLayers();
 		}
-	});
+	};
+	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 
 	auto selectedDestination = [this, targets]() -> StreamDestination * {
 		const int row = targets->currentRow();
@@ -964,5 +967,11 @@ void OBSBasic::InitDualStreamDock()
 
 	dock->setWidget(content);
 	AddDockWidget(dock, Qt::RightDockWidgetArea);
+	// Register after AddDockWidget: setupDockAction disconnects existing triggered slots.
+	// Its visibility update runs first, even when visibilityChanged is blocked.
+	connect(dock->toggleViewAction(), &QAction::triggered, this, [dock, syncVerticalPreview](bool) {
+		syncVerticalPreview(!dock->isHidden());
+	});
 	dock->hide();
+	syncVerticalPreview(false);
 }
