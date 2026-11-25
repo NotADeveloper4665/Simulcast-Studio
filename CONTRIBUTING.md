@@ -1,131 +1,16 @@
-OBS Studio Contribution Guidelines
-============
+# Contributing to Simulcast Studio
 
-> [!IMPORTANT]
-> These guidelines are subordinate to the [Constitution of the obs-rust Project](https://github.com/obs-rust/constitution/blob/main/CONSTITUTION.md), which supersedes them and every other project document. They cover technical practice only. The Constitution replaces the former Code of Conduct.
+Simulcast Studio is maintained independently of OBS Studio and OBS Studio Rust.
 
-OBS Studio accepts contributions via public **pull requests**, which encompass changes made to the project as well as a written description of the changes made and the motivation behind them.
+## Development workflow
 
-Pull requests can be opened by any user with sufficient contribution permissions on the platform chosen by the project. Likewise, any user with sufficient access permissions is able to read, comment, and suggest changes to a pull request, but the ultimate decision for or against adopting the suggested changes lies with **project members**.
+- Base Simulcast-specific changes on `simulcast-appimage`.
+- Keep pull requests focused; describe the problem, proposed change, and verification.
+- Preserve existing libobs APIs, plugin compatibility, settings, and scene collections.
+- Include relevant build and regression-test results. Clearly mark anything not tested.
+- Do not include credentials, streaming keys or unredacted private logs.
+- The maintainer approves merges and release publication.
 
-OBS Studio has shown steady growth of popularity, complexity, and scope throughout its existence. Contributions that demonstrate they have taken the aspects outlined in this document into account (including the impact to the maintainability of the project) will potentially, but not necessarily, have a higher chance of adoption.
+See the [project build and validation guide](https://github.com/NotADeveloper4665/Simulcast-Studio/blob/simulcast-appimage/docs/simulcast-studio.md). For inherited code style and technical practices, consult [the original contribution guidelines](CONTRIBUTING.upstream.md) and [CODESTYLE.md](CODESTYLE.md).
 
-> [!NOTE]
-> Past acceptance of a change, including “prior art” that exists in the codebase, does not guarantee that future, similar, changes will be accepted, as the “state of the art” (code style guidelines, best practices, language standard) is constantly evolving and the project consciously chooses to evolve with them.
-
-These guidelines attempt to provide a set of general rules that any contributor can choose to follow and implement before opening a pull request to reduce review effort and increase its chances for adoption.
-
-## General Contribution Guidelines
-
-The canonical language used by the project is “American English”, which mainly applies to source code and non-translated material. Examples include:
-
-* Commit messages
-* Names of constants, variables, and types
-* Source code comments
-* File names
-
-Appropriate templates are presented to the user when opening a new issue report or pull request on GitHub which are required to be fully filled out to be taken into consideration by the project.
-The template might require checking off items that might not be applicable e.g., the requirement to have the code properly formatted does not apply when the contribution has not changed any source code. **It is permissible and preferred to tick the box regardless**.
-
-Participation in this project is governed by the [Constitution of the obs-rust Project](https://github.com/obs-rust/constitution/blob/main/CONSTITUTION.md).
-
-## Pull Request Review Guidelines
-
-In general reviews of pull requests are not limited to project members and can be undertaken by contributors and other GitHub users. Project members commonly coordinate reviews of pull requests at their own discretion in line with project needs and available bandwidth.
-
-To reduce possible friction of the review process, a simple set of rules should be followed:
-
-* **Do not** request reviews from specific community or project members yourself.
-    * It is permitted to ping other GitHub users to notify them of a PR and kindly ask them if they are willing (and able) to review it, all within reason.
-* Reviewers might leave comments or ask for changes on specific lines of changed code. Once the comment has been addressed **do not unilaterally resolve** the comment.
-    * It is entirely the reviewer's decision whether they would consider the changes to be sufficient to address their concerns. Just having addressed a comment, does not resolve it.
-    * As a reviewer, make sure to regularly review the comments received on your reviews, check the code changes, and resolve your comments once they have been addressed. **Don't leave pull request authors hanging.**
-    * Project members will usually ping reviewers about unresolved review comments and resolve such comments themselves to unblock PRs from being merged.
-* When addressing review comments through code changes, prefer adding commits over force-pushing rewritten history, so reviewers can see what changed since their review.
-    * This is about the history reviewers read, not about keeping the PR branch current: rebasing onto master when GitHub reports a conflict, and the coordinator's rebases of ejected, stacked or about-to-land PRs, are expected (see [coordination.md](docs/rust-port/coordination.md), section 4). The merge queue squash-merges each PR, so master gets one commit per PR either way.
-
-## Commit Authoring Guidelines
-
-The project uses the “50/72” standard for commit messages, which requires that a commit title uses no more than 50 characters, while any consecutive line used for the commit description is allowed to use a maximum of 72 characters (with long lines manually broken up).
-
-The “anatomy” of a correct commit message with description looks like this:
-
-```
-prefix: This is a commit title using 50 characters
-
-This is a commit description line that is allowed to use up to 72 chars
-```
-
-Prefixes are commonly defined by the “module” the commit applies changes to, which has repercussions as to how commit contents are authored (see below).
-
-* Changes made to code for “libobs” should use the “libobs” prefix, similarly changes made to “obs-ffmpeg” use “obs-ffmpeg”.
-* Changes made to multiple modules in the “plugins” directory can use the “plugins” prefix, particularly if the changes are of a similar nature
-* Changes made to files involved in continuous integration (CI) should use the “CI” prefix regardless of the directory name.
-* Changes made to files used by the CMake build system should use the “cmake” prefix”
-
-When in doubt about what the correct prefix for a change might be, the existing commit history might be of help, however project guidelines might have changed in the interim and thus a “past” commit message might not be acceptable for new contributions.
-
-### Commit Messages
-
-The commit message is the primary place for documentation of changes, not only as a summary of “what” was changed, but even more importantly “why” the changes were made and “why” specifically in the way they have been made.
-
-As such the commit message should be written in such a way that it could easily pass as the “Description” and “Motivation and Context” required when opening a new pull request (and indeed platforms like GitHub will automatically copy the commit message into the opening post for a pull request with a single commit).
-
-This ensures that documentation and context are encoded within the source tree and do not require external documents or platforms to ensure this information is not lost.
-
-Many of these ideas match the ideas outlined in https://chris.beams.io/git-commit.
-
-### Commit Content Authoring Guidelines
-
-#### Code Style
-
-All code contributions to the project need to follow code style guidelines appropriate to the languages used by the changed files. For C and C++ the project has chosen to adopt well-established code style guidelines as its baseline with specific exceptions and changes outlined in a [separate document](https://github.com/obsproject/obs-studio/blob/master/CODESTYLE.md).
-
-The baseline rules for the common languages used by the project are:
-
-* C code needs to follow the Linux Kernel Coding Style (https://github.com/torvalds/linux/blob/master/Documentation/process/coding-style.rst)
-* C++ code needs to follow OBS Studios’ style guide. Familiarity with the Google C++ Style Guide (https://google.github.io/styleguide/cppguide.html) can serve as a baseline.
-* Objective-C and Objective-C++ code needs to follow Apple’s ObjectiveC Conventions (https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/Conventions/Conventions.html)
-* Swift code needs to follow the API Design Guidelines (https://www.swift.org/documentation/api-design-guidelines/)
-* **The column size limit for all code is 120 characters**
-
-To help with the formatting of code, the project contains configuration files for code-formatters of several languages:
-
-* `clang-format` can be used to correctly format C, C++, Objective-C, and Objective-C++ soure code
-* `swift-format` can be used to correctly format Swift source code
-* `gersemi` can be used to correctly format CMake source code
-
-> [!NOTE]
-> The “build-aux” directory in the project’s root directory contains scripts that can automate this process and are used by the project’s CI infrastructure to automatically check all contributions that changed corresponding source code files.
-
-#### Commit Contents
-
-The changes contained in a commit should attempt to represent logical “units of change” that make sense in isolation and do not necessarily require any preceding or following commits to work. Indeed if a single commit would potentially leave the project in a broken state (e.g., the project cannot be compiled, the application not run, or basic application functionality cannot function) then it is not a full “unit of change”. The accepted exception is a RED commit: under the [testing policy](docs/rust-port/testing-policy.md) a port or fix first commits a failing test, then the GREEN commit that makes it pass.
-
-* Changes to misspelled words or purely aesthetic changes should in principle not be individually capable of breaking the project in such a way and are permitted to be grouped into a single “large” commit
-* If a larger change requires some foundation of fixes to the existing code to make sense, those fixes represent a “unit of change” that should be decoupled from the functional changes made on top of them. Even better, such a change should be encapsulated in its own, separate, pull request.
-
-> [!IMPORTANT]
-> During review and collaboration the need for additional changes can arise quickly. It is permitted (and preferred) to temporarily ignore these guidelines to quickly provide changes required to address review comments and add many small, iterative, commits to the pull request.
->
-> Once all review comments have been addressed, fold the review fixups into the commits they belong to, but keep the RED and GREEN commits separate; do not squash them together. The merge queue squashes the PR into one commit on master.
-
-#### Co-Authorship
-
-Sometimes an open pull request might have been "lost to time" even though its contents might still be a meaningful and positive change. When picking up such a change and authoring a new pull request to "finish it", the original author should be retained as much as possible:
-
-* The original commit can be cherry-picked, which will retain the author information and only change the committer information
-* If the original commit needs to be adjusted and changed as it will not apply to an updated code-base, its original author should be added as a "Co-Author" to the commit message.
-
-```
-libobs: Refactor audio implementation
-
-
-Additional commit description
-<..>
-Co-authored-by: Name <git@address.TLD>
-```
-
-## Tools and Authorship
-
-Contributions are judged on their merit alone, whatever tools were used to produce them, including AI assistants (Article III of the Constitution). The contributor is responsible for everything they submit: it must be correct, reviewed, tested to the standards in this document, and license-compatible. Submissions that fail those standards are rejected on those grounds.
+Upstream copyright notices, licensing and attribution must be preserved. Simulcast-specific reports belong in [this repository](https://github.com/NotADeveloper4665/Simulcast-Studio/issues); upstream issues should be reported upstream only when independently reproduced there.
