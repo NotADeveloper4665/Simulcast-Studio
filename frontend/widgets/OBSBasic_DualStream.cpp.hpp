@@ -20,6 +20,9 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QStringList>
+
+#include <limits>
 
 namespace {
 constexpr char VerticalCanvasName[] = "Dual Stream Vertical";
@@ -31,6 +34,81 @@ bool IsYouTubeServer(const QString &server)
 {
 	const QString host = QUrl(server).host().toLower();
 	return host == QStringLiteral("youtube.com") || host.endsWith(QStringLiteral(".youtube.com"));
+}
+
+int HardwareEncoderPriority(const char *id)
+{
+	if (!id)
+		return -1;
+	const QString encoder = QString::fromUtf8(id).toLower();
+	if (encoder.contains(QStringLiteral("nvenc")))
+		return 0;
+	if (encoder.contains(QStringLiteral("vaapi")))
+		return 1;
+	if (encoder.contains(QStringLiteral("qsv")))
+		return 2;
+	if (encoder.contains(QStringLiteral("amf")))
+		return 3;
+	if (encoder.contains(QStringLiteral("videotoolbox")))
+		return 4;
+	return -1;
+}
+
+QString AvailableH264HardwareEncoder()
+{
+	QString best;
+	int bestPriority = std::numeric_limits<int>::max();
+	const char *id = nullptr;
+	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
+		const char *codec = obs_get_encoder_codec(id);
+		const int priority = HardwareEncoderPriority(id);
+		if (obs_get_encoder_type(id) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0 && priority >= 0 &&
+		    priority < bestPriority) {
+			best = QString::fromUtf8(id);
+			bestPriority = priority;
+		}
+	}
+	return best;
+}
+
+QString PreferredH264Encoder()
+{
+	const QString hardware = AvailableH264HardwareEncoder();
+	if (!hardware.isEmpty())
+		return hardware;
+	QString firstAvailable;
+	const char *id = nullptr;
+	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
+		const char *codec = obs_get_encoder_codec(id);
+		if (obs_get_encoder_type(id) != OBS_ENCODER_VIDEO || !codec || strcmp(codec, "h264") != 0)
+			continue;
+		const QString encoderId = QString::fromUtf8(id);
+		if (firstAvailable.isEmpty())
+			firstAvailable = encoderId;
+		if (encoderId == QStringLiteral("obs_x264"))
+			return encoderId;
+	}
+	return firstAvailable;
+}
+
+QString HardwareEncoderStatusText()
+{
+	const QString id = AvailableH264HardwareEncoder();
+	if (id.isEmpty()) {
+		QStringList available;
+		const char *encoderId = nullptr;
+		for (size_t index = 0; obs_enum_encoder_types(index, &encoderId); ++index) {
+			const char *codec = obs_get_encoder_codec(encoderId);
+			if (obs_get_encoder_type(encoderId) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0)
+				available.push_back(QString::fromUtf8(encoderId));
+		}
+		const QString detected = available.isEmpty() ? QObject::tr("none") : available.join(QStringLiteral(", "));
+		return QObject::tr("Hardware H.264 encoder: not detected. Available H.264 encoders: %1. New destinations and recordings will use software encoding when available. Check the GPU driver and OBS log, then restart Simulcast Studio.")
+			.arg(detected);
+	}
+	const char *displayName = obs_encoder_get_display_name(id.toUtf8().constData());
+	return QObject::tr("Hardware H.264 encoder detected: %1. New destinations and recordings will use it by default.")
+		.arg(QString::fromUtf8(displayName ? displayName : id.toUtf8().constData()));
 }
 
 bool GetVerticalVideoInfo(obs_video_info &video)
@@ -241,12 +319,15 @@ void OBSBasic::AddStreamDestination(QListWidget *list)
 	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
 		const char *codec = obs_get_encoder_codec(id);
 		if (obs_get_encoder_type(id) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0) {
-			encoders->addItem(QString::fromUtf8(obs_encoder_get_display_name(id)), QString::fromUtf8(id));
+			QString label = QString::fromUtf8(obs_encoder_get_display_name(id));
+			if (HardwareEncoderPriority(id) >= 0)
+				label += tr(" (Hardware)");
+			encoders->addItem(label, QString::fromUtf8(id));
 		}
 	}
-	const int x264 = encoders->findData(QStringLiteral("obs_x264"));
-	if (x264 >= 0) {
-		encoders->setCurrentIndex(x264);
+	const int preferred = encoders->findData(PreferredH264Encoder());
+	if (preferred >= 0) {
+		encoders->setCurrentIndex(preferred);
 	}
 	auto *bitrate = new QSpinBox(&dialog);
 	bitrate->setRange(250, 50000);
@@ -441,13 +522,24 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 	recording.output = obs_output_create("ffmpeg_muxer", recording.vertical ? "Simulcast Vertical Recording"
 								       : "Simulcast Horizontal Recording",
 				     outputSettings, nullptr);
+	const QString videoEncoderId = PreferredH264Encoder();
+	if (videoEncoderId.isEmpty()) {
+		recording.state.store(DualRecording::Failed);
+		QMessageBox::warning(this, tr("Dual Recording"), tr("No H.264 encoder is available."));
+		return;
+	}
 	OBSDataAutoRelease videoSettings = obs_data_create();
-	obs_data_set_string(videoSettings, "rate_control", "CRF");
-	obs_data_set_int(videoSettings, "crf", 18);
-	obs_data_set_string(videoSettings, "preset", "veryfast");
 	obs_data_set_int(videoSettings, "keyint_sec", 2);
-	OBSEncoderAutoRelease videoEncoder = obs_video_encoder_create("obs_x264", "Simulcast Recording H.264",
-								      videoSettings, nullptr);
+	if (HardwareEncoderPriority(videoEncoderId.toUtf8().constData()) >= 0) {
+		obs_data_set_string(videoSettings, "rate_control", "CBR");
+		obs_data_set_int(videoSettings, "bitrate", 16000);
+	} else {
+		obs_data_set_string(videoSettings, "rate_control", "CRF");
+		obs_data_set_int(videoSettings, "crf", 18);
+		obs_data_set_string(videoSettings, "preset", "veryfast");
+	}
+	OBSEncoderAutoRelease videoEncoder = obs_video_encoder_create(videoEncoderId.toUtf8().constData(),
+								      "Simulcast Recording H.264", videoSettings, nullptr);
 	OBSDataAutoRelease audioSettings = obs_data_create();
 	obs_data_set_int(audioSettings, "bitrate", 320);
 	OBSEncoderAutoRelease audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "Simulcast Recording AAC",
@@ -623,6 +715,9 @@ void OBSBasic::InitDualStreamDock()
 	auto *lowerLayer = addButton(layerOrderButtons, tr("Lower"));
 	auto *removeLayer = addButton(layerOrderButtons, tr("Remove Source"));
 
+	auto *hardwareStatus = new QLabel(HardwareEncoderStatusText(), content);
+	hardwareStatus->setWordWrap(true);
+	layout->addWidget(hardwareStatus);
 	layout->addWidget(new QLabel(tr("Stream Destinations"), content));
 	layout->addWidget(targets);
 	layout->addLayout(destinationButtons);
@@ -842,8 +937,11 @@ void OBSBasic::InitDualStreamDock()
 	});
 	connect(stopAllTargets, &QPushButton::clicked, this, [this] { StopExtraStreams(); });
 
-	auto updateDestinations = [this, targets, selectedDestination, canStart, startTarget, stopTarget,
+	auto updateDestinations = [this, targets, hardwareStatus, selectedDestination, canStart, startTarget, stopTarget,
 				   removeTarget] {
+		const QString detected = HardwareEncoderStatusText();
+		if (hardwareStatus->text() != detected)
+			hardwareStatus->setText(detected);
 		for (int row = 0; row < targets->count(); ++row) {
 			const auto &destination = *streamDestinations[static_cast<size_t>(row)];
 			QString status;

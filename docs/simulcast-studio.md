@@ -45,7 +45,12 @@ previous Simulcast Studio build.
    inline portrait canvas. **Layout** provides numeric controls and
    **Properties** opens source settings. **Raise** and **Lower** change
    stacking. The portrait layout is saved in the scene collection.
-3. Under **Stream Destinations**, add each ingest server and stream key.
+3. Check the **Hardware H.264 encoder** status in the Dual Stream dock. It
+   reports encoders that the loaded OBS plugins and Linux driver actually
+   exposed. New destinations and dual recordings prefer a detected hardware
+   encoder such as NVIDIA NVENC or Linux VA-API; otherwise they fall back to x264.
+   The encoder selector still lets you choose a different available encoder.
+4. Under **Stream Destinations**, add each ingest server and stream key.
    Assign it to either orientation and select an H.264 encoder and bitrate.
    Select a destination and press **Start** or **Stop**, or use **Start All**
    and **Stop All Streams** for the configured destinations. For YouTube,
@@ -54,16 +59,16 @@ previous Simulcast Studio build.
    YouTube's second vertical key for Vertical. Start both before going live in
    Studio. Both outputs use the same event's RTMPS ingest URL and keep their
    horizontal/vertical canvas assignment independent.
-4. The dock stores separate **Horizontal folder** and **Vertical folder** paths.
+5. The dock stores separate **Horizontal folder** and **Vertical folder** paths.
    Press **Record Both** to save the two canvases simultaneously as timestamped
    MKV files with H.264 video and AAC audio, then **Stop Recordings** to finish
    both files. Each recording has its own encoder and file path. Recording
    folders are remembered between launches.
-5. Extra stream destinations use OBS audio track 1 and a separate H.264 encoder
+6. Extra stream destinations use OBS audio track 1 and a separate H.264 encoder
    and AAC encoder per destination. Each live destination consumes its
    configured upload bitrate. Destination settings and stream keys stay in
    memory for the current application session.
-6. Use **Master Volume** in the Audio Mixer to adjust all outgoing and
+7. Use **Master Volume** in the Audio Mixer to adjust all outgoing and
    recorded audio tracks from 0% to 100%. Individual source settings stay
    where you set them, and the master setting is saved for the next launch.
 
