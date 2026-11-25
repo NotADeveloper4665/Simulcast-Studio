@@ -1,0 +1,41 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d mask;
+uniform float threshold;
+uniform float feather;
+uniform float enabled;
+
+sampler_state linearSampler {
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
+};
+
+struct VertData {
+    float4 pos : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+VertData VS(VertData v)
+{
+    v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj);
+    return v;
+}
+
+float4 PS(VertData v) : TARGET
+{
+    float4 c = image.Sample(linearSampler, v.uv);
+    float m = mask.Sample(linearSampler, v.uv).r;
+    float d = max(feather, 0.0001);
+    float a = smoothstep(threshold - d, threshold + d, m);
+    if (m <= 0.0) a = 0.0;
+    if (m >= 1.0) a = 1.0;
+    return c * lerp(1.0, a, enabled);
+}
+
+technique Draw {
+    pass {
+        vertex_shader = VS(v);
+        pixel_shader = PS(v);
+    }
+}
