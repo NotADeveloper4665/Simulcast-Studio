@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Install Fedora build dependencies
         run: |
-          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ rustup rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3
+          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3
           dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
           dnf -y builddep obs-studio
           dnf -y install x264-devel
@@ -31,8 +31,14 @@ jobs:
       - name: Configure and compile
         shell: bash
         run: |
-          rustup toolchain install 1.98.1 --profile minimal
-          rustup default 1.98.1
+          export CARGO_HOME=/opt/simulcast-cargo
+          export RUSTUP_HOME=/opt/simulcast-rustup
+          export PATH="$CARGO_HOME/bin:$PATH"
+          curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/simulcast-rustup.sh
+          sh /tmp/simulcast-rustup.sh -y --profile minimal --default-toolchain 1.98.1 --no-modify-path
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo --version
           cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
           cmake --build build_fedora --parallel 4
       - name: Package and validate Fedora RPM
