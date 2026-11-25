@@ -62,6 +62,9 @@ private:
 	bool generalChanged = false;
 	bool stream1Changed = false;
 	bool outputsChanged = false;
+	bool dualFoldersChanged = false;
+	QLineEdit *dualHorizontalPath = nullptr;
+	QLineEdit *dualVerticalPath = nullptr;
 	bool audioChanged = false;
 	bool videoChanged = false;
 	bool hotkeysChanged = false;
@@ -147,7 +150,7 @@ private:
 
 	inline bool Changed() const
 	{
-		return generalChanged || appearanceChanged || outputsChanged || stream1Changed || audioChanged ||
+		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged || stream1Changed || audioChanged ||
 		       videoChanged || advancedChanged || hotkeysChanged || a11yChanged;
 	}
 
@@ -158,6 +161,7 @@ private:
 		generalChanged = false;
 		stream1Changed = false;
 		outputsChanged = false;
+		dualFoldersChanged = false;
 		audioChanged = false;
 		videoChanged = false;
 		hotkeysChanged = false;

@@ -1,9 +1,35 @@
 #include "frontend/build/frontend-widgets.pch.hpp"
 
+#include <QTimer>
+
 OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui::OBSBasicControls)
 {
 	/* Create UI elements */
 	ui->setupUi(this);
+
+	// Keep dual recording separate from the normal profile recording.
+	auto *dualRecordButton = new QPushButton(tr("Record Both"), ui->controlsFrame);
+	dualRecordButton->setObjectName(QStringLiteral("dualRecordButton"));
+	dualRecordButton->setToolTip(tr("Record the horizontal and vertical canvases to separate files."));
+	ui->buttonsVLayout->insertWidget(ui->buttonsVLayout->indexOf(ui->recordingLayout) + 1, dualRecordButton);
+	dualRecordButton->setEnabled(false);
+	auto refreshDualRecording = [main, dualRecordButton] {
+		const bool ready = main->horizontalRecording && main->verticalRecording;
+		const bool active = ready && main->DualRecordingsActive();
+		const QString label = active ? tr("Stop Both") : tr("Record Both");
+		if (dualRecordButton->text() != label) {
+			dualRecordButton->setText(label);
+			setClasses(dualRecordButton, active ? "state-active" : "");
+		}
+		dualRecordButton->setEnabled(ready);
+	};
+	connect(dualRecordButton, &QPushButton::clicked, this, [main, refreshDualRecording] {
+		main->ToggleDualRecordings();
+		refreshDualRecording();
+	});
+	auto *dualRecordTimer = new QTimer(this);
+	connect(dualRecordTimer, &QTimer::timeout, this, refreshDualRecording);
+	dualRecordTimer->start(250);
 
 	streamButtonMenu.reset(new QMenu());
 	startStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StartStreaming"));

@@ -63,9 +63,11 @@ previous Simulcast Studio build.
    Start both before going live in Studio. Both outputs use the same event's
    RTMPS ingest URL and keep their horizontal/vertical canvas assignment
    independent.
-5. The dock stores separate **Horizontal folder** and **Vertical folder** paths.
-   Press **Record Both** to save the two canvases simultaneously as timestamped
-   MKV files with H.264 video and AAC audio, then **Stop Recordings** to finish
+5. Under **Settings → Output → Dual Video Recording**, choose separate
+   **Horizontal folder** and **Vertical folder** paths and apply the changes.
+   In Controls, press **Record Both** under **Start Recording** to save the two
+   canvases as timestamped MKV files with H.264 video and AAC audio. The same
+   button becomes **Stop Both** while either recording is active; press it to finish
    both files. Each recording has its own encoder and file path. Recording
    folders are remembered between launches.
 6. Extra stream destinations use OBS audio track 1 and a separate H.264 encoder

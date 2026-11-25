@@ -522,6 +522,9 @@ public:
 	void StartStreamDestination(StreamDestination &destination);
 	void StartDualRecording(DualRecording &recording);
 	void StopDualRecordings();
+	void ToggleDualRecordings();
+	bool DualRecordingsActive() const;
+	QString DualRecordingFolder(bool vertical) const;
 	void SaveDualRecordingFolders(const QString &horizontal, const QString &vertical);
 	bool ExtraStreamsActive() const;
 	void StopExtraStreams();

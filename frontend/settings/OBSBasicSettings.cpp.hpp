@@ -18,6 +18,9 @@
 
 #include "frontend/build/frontend-settings.pch.hpp"
 
+#include <QFileDialog>
+#include <QSignalBlocker>
+
 using namespace std;
 
 extern const char *get_simple_output_encoder(const char *encoder);
@@ -372,6 +375,36 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
 	ui->setupUi(this);
+
+	auto *dualFolders = new QGroupBox(tr("Dual Video Recording"), ui->outputPage);
+	auto *dualFolderLayout = new QFormLayout(dualFolders);
+	auto makeDualFolder = [this, dualFolders, dualFolderLayout](const QString &label, bool vertical) {
+		auto *row = new QWidget(dualFolders);
+		auto *rowLayout = new QHBoxLayout(row);
+		rowLayout->setContentsMargins(0, 0, 0, 0);
+		auto *field = new QLineEdit(main->DualRecordingFolder(vertical), row);
+		field->setObjectName(vertical ? QStringLiteral("dualVerticalRecordingPath")
+					      : QStringLiteral("dualHorizontalRecordingPath"));
+		auto *browse = new QPushButton(tr("Browse…"), row);
+		rowLayout->addWidget(field, 1);
+		rowLayout->addWidget(browse);
+		dualFolderLayout->addRow(label, row);
+		connect(browse, &QPushButton::clicked, this, [this, field, label] {
+			const QString path = QFileDialog::getExistingDirectory(this, label, field->text());
+			if (!path.isEmpty())
+				field->setText(path);
+		});
+		connect(field, &QLineEdit::textChanged, this, [this] {
+			if (!loading) {
+				dualFoldersChanged = true;
+				EnableApplyButton(true);
+			}
+		});
+		return field;
+	};
+	dualHorizontalPath = makeDualFolder(tr("Horizontal folder"), false);
+	dualVerticalPath = makeDualFolder(tr("Vertical folder"), true);
+	ui->verticalLayout_6->insertWidget(ui->verticalLayout_6->indexOf(ui->outputModePages), dualFolders);
 
 	main->EnableOutputs(false);
 
@@ -3208,6 +3241,12 @@ void OBSBasicSettings::LoadSettings(bool changedOnly)
 	if (!changedOnly || outputsChanged) {
 		LoadOutputSettings();
 	}
+	if (!changedOnly || dualFoldersChanged) {
+		const QSignalBlocker horizontalBlock(dualHorizontalPath);
+		const QSignalBlocker verticalBlock(dualVerticalPath);
+		dualHorizontalPath->setText(main->DualRecordingFolder(false));
+		dualVerticalPath->setText(main->DualRecordingFolder(true));
+	}
 	if (!changedOnly || audioChanged) {
 		LoadAudioSettings();
 	}
@@ -3960,6 +3999,9 @@ void OBSBasicSettings::SaveSettings()
 	}
 	if (outputsChanged) {
 		SaveOutputSettings();
+	}
+	if (dualFoldersChanged) {
+		main->SaveDualRecordingFolders(dualHorizontalPath->text().trimmed(), dualVerticalPath->text().trimmed());
 	}
 	if (audioChanged) {
 		SaveAudioSettings();
