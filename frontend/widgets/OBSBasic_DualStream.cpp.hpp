@@ -556,6 +556,8 @@ void OBSBasic::InitDualStreamDock()
 		verticalPreviewPanel->setVisible(visible);
 		ui->previewLayout->setStretchFactor(ui->previewContainer, visible ? 2 : 0);
 		ui->previewLayout->setStretchFactor(ui->previewDisabledWidget, visible ? 2 : 0);
+		if (programWidget)
+			ui->previewLayout->setStretchFactor(programWidget, visible ? 2 : 0);
 		if (visible) {
 			UpdateVerticalPreview();
 			RefreshVerticalLayers();
