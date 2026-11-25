@@ -15,3 +15,7 @@ directml = ["ort/directml"]
 coreml = ["ort/coreml"]
 [build-dependencies]
 bindgen = "0.71"
+
+# Standalone dynamically loaded plugin; do not change the host Rust workspace.
+[workspace]
+resolver = "3"
