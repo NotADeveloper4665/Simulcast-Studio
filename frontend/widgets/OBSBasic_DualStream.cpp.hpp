@@ -658,6 +658,26 @@ void OBSBasic::InitDualStreamDock()
 	auto *destinationButtons = new QHBoxLayout();
 	auto *layerOrderButtons = new QHBoxLayout();
 	auto *targets = new QListWidget(content);
+	const char *youtubeServerConfig = config_get_string(Config(), "Stream1", "DualStreamYoutubeServer");
+	const QString youtubeServer = youtubeServerConfig && *youtubeServerConfig
+					      ? QString::fromUtf8(youtubeServerConfig)
+					      : QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2");
+	auto addSavedYoutubeDestination = [this, targets, &youtubeServer](bool vertical, const char *configKey) {
+		const char *key = config_get_string(Config(), "Stream1", configKey);
+		if (!key || !*key)
+			return;
+		auto destination = std::make_unique<StreamDestination>();
+		destination->vertical = vertical;
+		destination->name = vertical ? tr("YouTube Vertical") : tr("YouTube Horizontal");
+		destination->server = youtubeServer;
+		destination->key = QString::fromUtf8(key);
+		destination->encoder = PreferredH264Encoder();
+		destination->bitrate = vertical ? 6000 : 4500;
+		targets->addItem(destination->name);
+		streamDestinations.emplace_back(std::move(destination));
+	};
+	addSavedYoutubeDestination(false, "DualStreamYoutubeHorizontalKey");
+	addSavedYoutubeDestination(true, "DualStreamYoutubeVerticalKey");
 	verticalLayers = new QListWidget(content);
 	verticalLayers->setObjectName(QStringLiteral("verticalSources"));
 	verticalLayers->setSelectionMode(QAbstractItemView::ExtendedSelection);

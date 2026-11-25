@@ -51,15 +51,18 @@ previous Simulcast Studio build.
    hardware encoder such as NVIDIA NVENC, Intel VA-API or Quick Sync; otherwise
    they fall back to x264. The encoder selector still lets you choose another
    available encoder.
-4. Under **Stream Destinations**, add each ingest server and stream key.
-   Assign it to either orientation and select an H.264 encoder and bitrate.
+4. Set the YouTube ingest URL and separate horizontal and vertical keys in
+   **Settings → Stream → YouTube Dual Stream Destinations**. Saved keys load as
+   destinations in the Dual Stream dock at startup. Other services can still
+   be added there. Assign destinations to either orientation and select an
+   H.264 encoder and bitrate.
    Select a destination and press **Start** or **Stop**, or use **Start All**
    and **Stop All Streams** for the configured destinations. For YouTube,
    create one live event, set the vertical preview to **Encoder** and **RTMP(S)**
    in Live Control Room, then use the horizontal event key for Horizontal and
-   YouTube setup steps are also shown under **Settings → Stream**. Start both
-   before going live in Studio. Both outputs use the same event's RTMPS ingest
-   URL and keep their horizontal/vertical canvas assignment independent.
+   Start both before going live in Studio. Both outputs use the same event's
+   RTMPS ingest URL and keep their horizontal/vertical canvas assignment
+   independent.
 5. The dock stores separate **Horizontal folder** and **Vertical folder** paths.
    Press **Record Both** to save the two canvases simultaneously as timestamped
    MKV files with H.264 video and AAC audio, then **Stop Recordings** to finish

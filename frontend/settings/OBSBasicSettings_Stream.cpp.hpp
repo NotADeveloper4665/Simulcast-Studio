@@ -84,9 +84,6 @@ void OBSBasicSettings::InitStreamPage()
 	ui->connectedAccountText->setVisible(false);
 
 	int vertSpacing = ui->topStreamLayout->verticalSpacing();
-	auto *youtubeDualStreamInfo = new QLabel(QTStr("Basic.Settings.Stream.YouTubeDualStreamHelp"), this);
-	youtubeDualStreamInfo->setWordWrap(true);
-	ui->topStreamLayout->insertRow(1, youtubeDualStreamInfo);
 
 	QMargins m = ui->topStreamLayout->contentsMargins();
 	m.setBottom(vertSpacing / 2);
@@ -106,6 +103,25 @@ void OBSBasicSettings::InitStreamPage()
 	ui->twitchAddonDropdown->addItem(QTStr("Basic.Settings.Stream.TTVAddon.BTTV"));
 	ui->twitchAddonDropdown->addItem(QTStr("Basic.Settings.Stream.TTVAddon.FFZ"));
 	ui->twitchAddonDropdown->addItem(QTStr("Basic.Settings.Stream.TTVAddon.Both"));
+
+	auto *youtubeDualStream = new QGroupBox(QTStr("Basic.Settings.Stream.YouTubeDualStream"), this);
+	auto *youtubeDualStreamLayout = new QFormLayout(youtubeDualStream);
+	auto *youtubeDualStreamInfo = new QLabel(QTStr("Basic.Settings.Stream.YouTubeDualStreamHelp"), youtubeDualStream);
+	youtubeDualStreamInfo->setWordWrap(true);
+	youtubeDualStreamLayout->addRow(youtubeDualStreamInfo);
+	auto *youtubeServer = new QLineEdit(youtubeDualStream);
+	youtubeServer->setObjectName(QStringLiteral("youtubeDualStreamServer"));
+	youtubeServer->setText(QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2"));
+	auto *youtubeHorizontalKey = new QLineEdit(youtubeDualStream);
+	youtubeHorizontalKey->setObjectName(QStringLiteral("youtubeDualStreamHorizontalKey"));
+	youtubeHorizontalKey->setEchoMode(QLineEdit::Password);
+	auto *youtubeVerticalKey = new QLineEdit(youtubeDualStream);
+	youtubeVerticalKey->setObjectName(QStringLiteral("youtubeDualStreamVerticalKey"));
+	youtubeVerticalKey->setEchoMode(QLineEdit::Password);
+	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.Server"), youtubeServer);
+	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.HorizontalKey"), youtubeHorizontalKey);
+	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.VerticalKey"), youtubeVerticalKey);
+	ui->verticalLayout_5->addWidget(youtubeDualStream);
 
 	connect(ui->ignoreRecommended, &QCheckBox::clicked, this, &OBSBasicSettings::DisplayEnforceWarning);
 	connect(ui->ignoreRecommended, &QCheckBox::toggled, this, &OBSBasicSettings::UpdateResFPSLimits);
@@ -143,6 +159,19 @@ void OBSBasicSettings::LoadStream1Settings()
 	bool is_whip = (strcmp(type, "whip_custom") == 0);
 
 	loading = true;
+	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamServer"))) {
+		const char *value = config_get_string(main->Config(), "Stream1", "DualStreamYoutubeServer");
+		if (value && *value)
+			field->setText(QString::fromUtf8(value));
+	}
+	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamHorizontalKey"))) {
+		const char *value = config_get_string(main->Config(), "Stream1", "DualStreamYoutubeHorizontalKey");
+		field->setText(QString::fromUtf8(value ? value : ""));
+	}
+	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamVerticalKey"))) {
+		const char *value = config_get_string(main->Config(), "Stream1", "DualStreamYoutubeVerticalKey");
+		field->setText(QString::fromUtf8(value ? value : ""));
+	}
 
 	OBSDataAutoRelease settings = obs_service_get_settings(service_obj);
 
@@ -382,6 +411,12 @@ void OBSBasicSettings::SaveStream1Settings()
 
 	main->SetService(newService);
 	main->SaveService();
+	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamServer")))
+		config_set_string(main->Config(), "Stream1", "DualStreamYoutubeServer", QT_TO_UTF8(field->text().trimmed()));
+	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamHorizontalKey")))
+		config_set_string(main->Config(), "Stream1", "DualStreamYoutubeHorizontalKey", QT_TO_UTF8(field->text().trimmed()));
+	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamVerticalKey")))
+		config_set_string(main->Config(), "Stream1", "DualStreamYoutubeVerticalKey", QT_TO_UTF8(field->text().trimmed()));
 	main->auth = auth;
 	if (!!main->auth) {
 		main->auth->LoadUI();
