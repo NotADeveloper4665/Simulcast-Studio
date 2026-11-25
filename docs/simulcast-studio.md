@@ -10,7 +10,7 @@ sudo dnf install dnf5-plugins cmake ninja-build extra-cmake-modules \
   clang git rustup rpm-build x264-devel patchelf squashfs-tools pulseaudio-utils
 sudo dnf builddep obs-studio
 git submodule update --init plugins/obs-browser plugins/obs-websocket
-cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_RELEASE_VERSION=0.1.0
+cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
 cmake --build build_fedora --parallel 4
 DESTDIR="$PWD/Simulcast.AppDir" cmake --install build_fedora --strip
 uv run --no-project build-aux/appimage/assemble_fedora_appdir.py Simulcast.AppDir
