@@ -1,14 +1,8 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Report a vulnerability
-    url: https://github.com/obs-rust/obs-studio/security/advisories/new
-    about: High-risk vulnerabilities (remote input or credential leaks) go to a private advisory; low-risk ones are normal bugs (see SECURITY.md).
-  - name: Feature idea
-    url: https://github.com/obs-rust/obs-studio/discussions/categories/ideas
-    about: Propose a future feature in Discussions → Ideas. Issues are for bugs and claimable work.
-  - name: Question
-    url: https://github.com/obs-rust/obs-studio/discussions/categories/q-a
-    about: Ask about using or building OBS-Studio-Rust.
-  - name: Coordination rules
-    url: https://github.com/obs-rust/obs-studio/blob/master/docs/rust-port/coordination.md
-    about: How to claim issues and avoid duplicate pull requests.
+  - name: Report a security vulnerability
+    url: https://github.com/NotADeveloper4665/Simulcast-Studio/security/advisories/new
+    about: Privately report security vulnerabilities. Do not include stream keys or credentials in public issues.
+  - name: Simulcast Studio issues
+    url: https://github.com/NotADeveloper4665/Simulcast-Studio/issues
+    about: Report bugs, suggest features, or ask about current development.
