@@ -1081,6 +1081,7 @@ void OBSBasic::OBSInit()
 
 	/* The layout and the sizes the user gave its docks
 	 * (obs-rust/obs-studio#5230); none saved or not valid: the default. */
+	InitDualStreamDock();
 	if (!dockLayout->Load(App()->GetUserConfig(), "BasicWindow")) {
 		on_resetDocks_triggered(true);
 	}
@@ -1789,7 +1790,7 @@ bool OBSBasic::isReadyToClose()
 bool OBSBasic::shouldPromptForClose()
 {
 	bool confirmOnExit = config_get_bool(App()->GetUserConfig(), "General", "ConfirmOnExit");
-	if (confirmOnExit && !closeWithoutPrompt_ && outputHandler && outputHandler->Active() && !clearingFailed) {
+	if (confirmOnExit && !closeWithoutPrompt_ && Active() && !clearingFailed) {
 		return true;
 	}
 

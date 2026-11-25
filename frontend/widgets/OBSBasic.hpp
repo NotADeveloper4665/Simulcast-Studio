@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include "ui_OBSBasic.h"
 #include "OBSMainWindow.hpp"
 
@@ -478,6 +480,36 @@ private:
 	QList<QDockWidget *> MainDocks() const;
 
 public:
+	struct StreamDestination {
+		enum State { Idle, Connecting, Live, Stopping, Failed };
+
+		QString name;
+		QString server;
+		QString key;
+		QString encoder;
+		int bitrate = 4500;
+		bool vertical = false;
+		std::atomic<State> state{Idle};
+		OBSServiceAutoRelease service;
+		OBSOutputAutoRelease output;
+		OBSSignal started;
+		OBSSignal stopped;
+	};
+
+	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
+	QListWidget *verticalLayers = nullptr;
+	void InitDualStreamDock();
+	obs_canvas_t *GetVerticalCanvas() const;
+	void InitVerticalCanvasVideo();
+	OBSScene GetVerticalScene(bool create);
+	void RefreshVerticalLayers();
+	void AddVerticalLayer();
+	void EditVerticalLayer();
+	void AddStreamDestination(QListWidget *list);
+	void StartStreamDestination(StreamDestination &destination);
+	bool ExtraStreamsActive() const;
+	void StopExtraStreams();
+
 	void AddDockWidget(QDockWidget *dock, Qt::DockWidgetArea area, bool extraBrowser = false);
 	void RemoveDockWidget(const QString &name);
 	bool IsDockObjectNameUsed(const QString &name);

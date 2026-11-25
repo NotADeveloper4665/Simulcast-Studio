@@ -18,6 +18,12 @@
 
 #include <QAction>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QListWidget>
+#include <QSpinBox>
+#include <QUrl>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QPointer>

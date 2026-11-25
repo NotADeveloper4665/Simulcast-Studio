@@ -37,8 +37,22 @@ typedef void (*defer_call_cb)(void *param);
 
 extern void defer_call_post(defer_call_cb call, void *cb);
 
+#if !defined(_MSC_VER) && !defined(SWIG)
+#if defined(__MINGW32__)
+#define SCRIPT_PRINTF(format, args) __attribute__((__format__(__gnu_printf__, format, args)))
+#else
+#define SCRIPT_PRINTF(format, args) __attribute__((__format__(__printf__, format, args)))
+#endif
+#else
+#define SCRIPT_PRINTF(format, args)
+#endif
+
+SCRIPT_PRINTF(3, 4)
 extern void script_log(obs_script_t *script, int level, const char *format, ...);
+SCRIPT_PRINTF(3, 0)
 extern void script_log_va(obs_script_t *script, int level, const char *format, va_list args);
+
+#undef SCRIPT_PRINTF
 
 #define script_error(script, format, ...) script_log(script, LOG_ERROR, format, ##__VA_ARGS__)
 #define script_warn(script, format, ...) script_log(script, LOG_WARNING, format, ##__VA_ARGS__)

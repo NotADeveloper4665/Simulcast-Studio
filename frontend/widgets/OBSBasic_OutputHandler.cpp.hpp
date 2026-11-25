@@ -46,10 +46,7 @@ void OBSBasic::ResetOutputs()
 
 bool OBSBasic::Active() const
 {
-	if (!outputHandler) {
-		return false;
-	}
-	return outputHandler->Active();
+	return ExtraStreamsActive() || (outputHandler && outputHandler->Active());
 }
 
 void OBSBasic::ResizeOutputSizeOfSource()
