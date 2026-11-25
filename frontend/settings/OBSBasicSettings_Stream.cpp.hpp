@@ -122,6 +122,9 @@ void OBSBasicSettings::InitStreamPage()
 	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.HorizontalKey"), youtubeHorizontalKey);
 	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.VerticalKey"), youtubeVerticalKey);
 	ui->verticalLayout_5->addWidget(youtubeDualStream);
+	connect(youtubeServer, &QLineEdit::textChanged, this, &OBSBasicSettings::Stream1Changed);
+	connect(youtubeHorizontalKey, &QLineEdit::textChanged, this, &OBSBasicSettings::Stream1Changed);
+	connect(youtubeVerticalKey, &QLineEdit::textChanged, this, &OBSBasicSettings::Stream1Changed);
 
 	connect(ui->ignoreRecommended, &QCheckBox::clicked, this, &OBSBasicSettings::DisplayEnforceWarning);
 	connect(ui->ignoreRecommended, &QCheckBox::toggled, this, &OBSBasicSettings::UpdateResFPSLimits);
