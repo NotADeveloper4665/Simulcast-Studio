@@ -47,14 +47,23 @@ previous Simulcast Studio build.
    stacking. The portrait layout is saved in the scene collection.
 3. Under **Stream Destinations**, add each ingest server and stream key.
    Assign it to either orientation and select an H.264 encoder and bitrate.
-   Select a destination and press **Start** or **Stop**. Repeat for every
-   destination you want live. OBS's normal **Start Streaming** button still
-   controls the main profile service.
-4. Extra destinations use OBS audio track 1 and a separate H.264 encoder and
-   AAC encoder per destination. Each live destination consumes its configured
-   upload bitrate. Destination settings and stream keys stay in memory for
-   the current application session.
-5. Use **Master Volume** in the Audio Mixer to adjust all outgoing and
+   Select a destination and press **Start** or **Stop**, or use **Start All**
+   and **Stop All Streams** for the configured destinations. For YouTube,
+   create one live event, set the vertical preview to **Encoder** and **RTMP(S)**
+   in Live Control Room, then use the horizontal event key for Horizontal and
+   YouTube's second vertical key for Vertical. Start both before going live in
+   Studio. Both outputs use the same event's RTMPS ingest URL and keep their
+   horizontal/vertical canvas assignment independent.
+4. The dock stores separate **Horizontal folder** and **Vertical folder** paths.
+   Press **Record Both** to save the two canvases simultaneously as timestamped
+   MKV files with H.264 video and AAC audio, then **Stop Recordings** to finish
+   both files. Each recording has its own encoder and file path. Recording
+   folders are remembered between launches.
+5. Extra stream destinations use OBS audio track 1 and a separate H.264 encoder
+   and AAC encoder per destination. Each live destination consumes its
+   configured upload bitrate. Destination settings and stream keys stay in
+   memory for the current application session.
+6. Use **Master Volume** in the Audio Mixer to adjust all outgoing and
    recorded audio tracks from 0% to 100%. Individual source settings stay
    where you set them, and the master setting is saved for the next launch.
 

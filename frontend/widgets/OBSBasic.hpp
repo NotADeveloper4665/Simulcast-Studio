@@ -495,8 +495,18 @@ public:
 		OBSSignal started;
 		OBSSignal stopped;
 	};
+	struct DualRecording {
+		enum State { Idle, Recording, Stopping, Failed };
+		std::atomic<State> state{Idle};
+		OBSOutputAutoRelease output;
+		OBSSignal started;
+		OBSSignal stopped;
+		bool vertical = false;
+	};
 
 	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
+	std::unique_ptr<DualRecording> horizontalRecording;
+	std::unique_ptr<DualRecording> verticalRecording;
 	QListWidget *verticalLayers = nullptr;
 	QWidget *verticalPreviewPanel = nullptr;
 	OBSBasicPreview *verticalPreview = nullptr;
@@ -510,6 +520,9 @@ public:
 	void EditVerticalLayer();
 	void AddStreamDestination(QListWidget *list);
 	void StartStreamDestination(StreamDestination &destination);
+	void StartDualRecording(DualRecording &recording);
+	void StopDualRecordings();
+	void SaveDualRecordingFolders(const QString &horizontal, const QString &vertical);
 	bool ExtraStreamsActive() const;
 	void StopExtraStreams();
 

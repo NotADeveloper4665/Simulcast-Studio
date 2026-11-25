@@ -1254,6 +1254,8 @@ void OBSBasic::OnFirstLoad()
 
 OBSBasic::~OBSBasic()
 {
+	StopDualRecordings();
+	StopExtraStreams();
 	// Normal shutdown clears the API before deleting the window. Startup
 	// failures must also detach callbacks before their main window disappears.
 	if (api) {

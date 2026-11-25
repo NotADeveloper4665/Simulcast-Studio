@@ -15,11 +15,23 @@
 
 #include "frontend/build/frontend-widgets.pch.hpp"
 
+#include <QDateTime>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QStandardPaths>
+
 namespace {
 constexpr char VerticalCanvasName[] = "Dual Stream Vertical";
 constexpr char VerticalSceneName[] = "Vertical Program";
 constexpr int VerticalWidth = 1080;
 constexpr int VerticalHeight = 1920;
+
+bool IsYouTubeServer(const QString &server)
+{
+	const QString host = QUrl(server).host().toLower();
+	return host == QStringLiteral("youtube.com") || host.endsWith(QStringLiteral(".youtube.com"));
+}
 
 bool GetVerticalVideoInfo(obs_video_info &video)
 {
@@ -217,7 +229,9 @@ void OBSBasic::AddStreamDestination(QListWidget *list)
 	auto *form = new QFormLayout(&dialog);
 	auto *name = new QLineEdit(&dialog);
 	auto *server = new QLineEdit(&dialog);
+	server->setText(QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2"));
 	server->setPlaceholderText(QStringLiteral("rtmps://host/app"));
+	server->setToolTip(tr("For YouTube, use this same ingest URL for both destinations and enter the separate stream key shown for each orientation."));
 	auto *key = new QLineEdit(&dialog);
 	key->setEchoMode(QLineEdit::Password);
 	auto *orientation = new QComboBox(&dialog);
@@ -276,6 +290,14 @@ void OBSBasic::AddStreamDestination(QListWidget *list)
 	destination->key = key->text().trimmed();
 	destination->encoder = encoders->currentData().toString();
 	destination->bitrate = bitrate->value();
+	for (const auto &existing : streamDestinations) {
+		if (existing->vertical != destination->vertical && existing->key == destination->key &&
+		    IsYouTubeServer(existing->server) && IsYouTubeServer(destination->server)) {
+			QMessageBox::warning(this, tr("Duplicate Stream Key"),
+					     tr("Horizontal and vertical destinations need separate keys. For YouTube, use its second key from the vertical Encoder stream settings."));
+			return;
+		}
+	}
 	const QString title = destination->name;
 	streamDestinations.emplace_back(std::move(destination));
 	list->addItem(title);
@@ -372,13 +394,139 @@ void OBSBasic::StartStreamDestination(StreamDestination &destination)
 	}
 }
 
+void OBSBasic::StartDualRecording(DualRecording &recording)
+{
+	const auto state = recording.state.load();
+	if (state == DualRecording::Recording || state == DualRecording::Stopping)
+		return;
+
+	const QString configKey = recording.vertical ? QStringLiteral("DualRecordVerticalDirectory")
+						     : QStringLiteral("DualRecordHorizontalDirectory");
+	const QString orientation = recording.vertical ? QStringLiteral("Vertical") : QStringLiteral("Horizontal");
+	const char *stored = config_get_string(App()->GetUserConfig(), "BasicWindow", configKey.toUtf8().constData());
+	QString directory = stored && *stored ? QString::fromUtf8(stored)
+					      : QDir::home().filePath(QStringLiteral("Videos/Simulcast/%1").arg(orientation));
+	if (!QDir().mkpath(directory)) {
+		recording.state.store(DualRecording::Failed);
+		QMessageBox::warning(this, tr("Dual Recording"), tr("Could not create the recording folder:\n%1").arg(directory));
+		return;
+	}
+
+	video_t *video = obs_get_video();
+	if (recording.vertical) {
+		if (!GetVerticalScene(true)) {
+			QMessageBox::information(this, tr("Dual Recording"), tr("Add a source to the vertical scene before recording it."));
+			return;
+		}
+		video = obs_canvas_get_video(GetVerticalCanvas());
+	}
+	if (!video || !obs_get_output_flags("ffmpeg_muxer")) {
+		recording.state.store(DualRecording::Failed);
+		return;
+	}
+
+	const QString prefix = recording.vertical ? QStringLiteral("Simulcast-Vertical")
+						  : QStringLiteral("Simulcast-Horizontal");
+	const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+	QString path;
+	for (int suffix = 1; suffix < 10000; ++suffix) {
+		const QString collision = suffix == 1 ? QString() : QStringLiteral("-%1").arg(suffix);
+		path = QDir(directory).filePath(QStringLiteral("%1-%2%3.mkv").arg(prefix, stamp, collision));
+		if (!QFileInfo::exists(path))
+			break;
+	}
+
+	OBSDataAutoRelease outputSettings = obs_data_create();
+	obs_data_set_string(outputSettings, "path", path.toUtf8().constData());
+	recording.output = obs_output_create("ffmpeg_muxer", recording.vertical ? "Simulcast Vertical Recording"
+								       : "Simulcast Horizontal Recording",
+				     outputSettings, nullptr);
+	OBSDataAutoRelease videoSettings = obs_data_create();
+	obs_data_set_string(videoSettings, "rate_control", "CRF");
+	obs_data_set_int(videoSettings, "crf", 18);
+	obs_data_set_string(videoSettings, "preset", "veryfast");
+	obs_data_set_int(videoSettings, "keyint_sec", 2);
+	OBSEncoderAutoRelease videoEncoder = obs_video_encoder_create("obs_x264", "Simulcast Recording H.264",
+								      videoSettings, nullptr);
+	OBSDataAutoRelease audioSettings = obs_data_create();
+	obs_data_set_int(audioSettings, "bitrate", 320);
+	OBSEncoderAutoRelease audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "Simulcast Recording AAC",
+								      audioSettings, 0, nullptr);
+	if (!recording.output || !videoEncoder || !audioEncoder) {
+		recording.output = nullptr;
+		recording.state.store(DualRecording::Failed);
+		QMessageBox::warning(this, tr("Dual Recording"), tr("Could not create H.264/AAC recording encoders."));
+		return;
+	}
+
+	obs_encoder_set_video(videoEncoder, video);
+	obs_encoder_set_audio(audioEncoder, obs_get_audio());
+	obs_output_set_video_encoder(recording.output, videoEncoder);
+	obs_output_set_audio_encoder(recording.output, audioEncoder, 0);
+	recording.started.Disconnect();
+	recording.stopped.Disconnect();
+	auto *handler = obs_output_get_signal_handler(recording.output);
+	recording.started.Connect(handler, "start", [](void *data, calldata_t *) {
+		static_cast<DualRecording *>(data)->state.store(DualRecording::Recording);
+	}, &recording);
+	recording.stopped.Connect(handler, "stop", [](void *data, calldata_t *params) {
+		static_cast<DualRecording *>(data)->state.store(
+			calldata_int(params, "code") == OBS_OUTPUT_SUCCESS ? DualRecording::Idle : DualRecording::Failed);
+	}, &recording);
+	recording.state.store(DualRecording::Stopping);
+	if (!obs_output_start(recording.output)) {
+		recording.state.store(DualRecording::Failed);
+		recording.output = nullptr;
+		QMessageBox::warning(this, tr("Dual Recording"), tr("Could not start recording to:\n%1").arg(path));
+	}
+}
+
+void OBSBasic::StopDualRecordings()
+{
+	bool stopping = false;
+	for (DualRecording *recording : {horizontalRecording.get(), verticalRecording.get()}) {
+		if (!recording || !recording->output)
+			continue;
+		if (recording->state.load() == DualRecording::Recording || recording->state.load() == DualRecording::Stopping) {
+			recording->state.store(DualRecording::Stopping);
+			obs_output_force_stop(recording->output);
+			stopping = true;
+		}
+	}
+	if (stopping)
+		obs_wait_for_destroy_queue();
+	for (DualRecording *recording : {horizontalRecording.get(), verticalRecording.get()}) {
+		if (!recording)
+			continue;
+		recording->started.Disconnect();
+		recording->stopped.Disconnect();
+		recording->output = nullptr;
+		if (recording->state.load() == DualRecording::Stopping)
+			recording->state.store(DualRecording::Idle);
+	}
+}
+
+void OBSBasic::SaveDualRecordingFolders(const QString &horizontal, const QString &vertical)
+{
+	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordHorizontalDirectory", horizontal.toUtf8().constData());
+	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordVerticalDirectory", vertical.toUtf8().constData());
+	config_save_safe(App()->GetUserConfig(), "tmp", nullptr);
+}
+
 bool OBSBasic::ExtraStreamsActive() const
 {
-	return std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
+	const bool destinationsActive = std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
 		const auto state = destination->state.load();
 		return state == StreamDestination::Connecting || state == StreamDestination::Live ||
 		       state == StreamDestination::Stopping;
 	});
+	const auto recordingActive = [](const std::unique_ptr<DualRecording> &recording) {
+		if (!recording)
+			return false;
+		const auto state = recording->state.load();
+		return state == DualRecording::Recording || state == DualRecording::Stopping;
+	};
+	return destinationsActive || recordingActive(horizontalRecording) || recordingActive(verticalRecording);
 }
 
 void OBSBasic::StopExtraStreams()
@@ -482,6 +630,70 @@ void OBSBasic::InitDualStreamDock()
 	auto *removeTarget = addButton(destinationButtons, tr("Remove"));
 	auto *startTarget = addButton(destinationButtons, tr("Start"));
 	auto *stopTarget = addButton(destinationButtons, tr("Stop"));
+	auto *startAllTargets = addButton(destinationButtons, tr("Start All"));
+	auto *stopAllTargets = addButton(destinationButtons, tr("Stop All Streams"));
+	auto *youtubeHelp = new QLabel(
+		tr("YouTube: create one live event, set the vertical preview to Encoder and RTMP(S) in Live Control Room, then add Horizontal with the horizontal key and Vertical with YouTube's second key. Start both destinations here before going live in Studio."), content);
+	youtubeHelp->setWordWrap(true);
+	layout->addWidget(youtubeHelp);
+
+	horizontalRecording = std::make_unique<DualRecording>();
+	verticalRecording = std::make_unique<DualRecording>();
+	horizontalRecording->vertical = false;
+	verticalRecording->vertical = true;
+	const QString movies = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
+	const QString root = QDir(movies.isEmpty() ? QDir::home().filePath(QStringLiteral("Videos")) : movies)
+			     .filePath(QStringLiteral("Simulcast"));
+	const char *horizontalStored = config_get_string(App()->GetUserConfig(), "BasicWindow", "DualRecordHorizontalDirectory");
+	const char *verticalStored = config_get_string(App()->GetUserConfig(), "BasicWindow", "DualRecordVerticalDirectory");
+	QString horizontalDirectory = horizontalStored && *horizontalStored ? QString::fromUtf8(horizontalStored)
+							      : QDir(root).filePath(QStringLiteral("Horizontal"));
+	QString verticalDirectory = verticalStored && *verticalStored ? QString::fromUtf8(verticalStored)
+						    : QDir(root).filePath(QStringLiteral("Vertical"));
+	auto *recordingFolders = new QFormLayout();
+	auto makeFolder = [this, content, recordingFolders](const QString &title, const QString &directory, bool horizontal) {
+		auto *row = new QWidget(content);
+		auto *rowLayout = new QHBoxLayout(row);
+		rowLayout->setContentsMargins(0, 0, 0, 0);
+		auto *field = new QLineEdit(directory, row);
+		auto *browse = new QPushButton(tr("Browse…"), row);
+		rowLayout->addWidget(field, 1);
+		rowLayout->addWidget(browse);
+		recordingFolders->addRow(title, row);
+		connect(browse, &QPushButton::clicked, this, [this, field, horizontal, title] {
+			const QString selected = QFileDialog::getExistingDirectory(this, title, field->text());
+			if (selected.isEmpty())
+				return;
+			field->setText(selected);
+			const QString other = QString::fromUtf8(config_get_string(App()->GetUserConfig(), "BasicWindow",
+									 horizontal ? "DualRecordVerticalDirectory"
+										    : "DualRecordHorizontalDirectory"));
+			SaveDualRecordingFolders(horizontal ? selected : other, horizontal ? other : selected);
+		});
+		return field;
+	};
+	auto *horizontalPath = makeFolder(tr("Horizontal folder"), horizontalDirectory, true);
+	auto *verticalPath = makeFolder(tr("Vertical folder"), verticalDirectory, false);
+	SaveDualRecordingFolders(horizontalDirectory, verticalDirectory);
+	connect(horizontalPath, &QLineEdit::editingFinished, this, [this, horizontalPath, verticalPath] {
+		SaveDualRecordingFolders(horizontalPath->text().trimmed(), verticalPath->text().trimmed());
+	});
+	connect(verticalPath, &QLineEdit::editingFinished, this, [this, horizontalPath, verticalPath] {
+		SaveDualRecordingFolders(horizontalPath->text().trimmed(), verticalPath->text().trimmed());
+	});
+	layout->addLayout(recordingFolders);
+	auto *recordingStatus = new QLabel(content);
+	layout->addWidget(recordingStatus);
+	auto *recordButtons = new QHBoxLayout();
+	auto *recordBoth = addButton(recordButtons, tr("Record Both"));
+	auto *stopRecordings = addButton(recordButtons, tr("Stop Recordings"));
+	layout->addLayout(recordButtons);
+	connect(recordBoth, &QPushButton::clicked, this, [this, horizontalPath, verticalPath] {
+		SaveDualRecordingFolders(horizontalPath->text().trimmed(), verticalPath->text().trimmed());
+		StartDualRecording(*horizontalRecording);
+		StartDualRecording(*verticalRecording);
+	});
+	connect(stopRecordings, &QPushButton::clicked, this, &OBSBasic::StopDualRecordings);
 
 	connect(addLayer, &QPushButton::clicked, this, &OBSBasic::AddVerticalLayer);
 	connect(editLayer, &QPushButton::clicked, this, &OBSBasic::EditVerticalLayer);
@@ -622,6 +834,13 @@ void OBSBasic::InitDualStreamDock()
 			obs_output_force_stop(destination->output);
 		}
 	});
+	connect(startAllTargets, &QPushButton::clicked, this, [this, canStart] {
+		for (const auto &destination : streamDestinations) {
+			if (canStart(destination.get()))
+				StartStreamDestination(*destination);
+		}
+	});
+	connect(stopAllTargets, &QPushButton::clicked, this, [this] { StopExtraStreams(); });
 
 	auto updateDestinations = [this, targets, selectedDestination, canStart, startTarget, stopTarget,
 				   removeTarget] {
@@ -662,6 +881,30 @@ void OBSBasic::InitDualStreamDock()
 
 	auto *timer = new QTimer(dock);
 	connect(timer, &QTimer::timeout, this, updateDestinations);
+	connect(timer, &QTimer::timeout, this, [this, recordingStatus, recordBoth, stopRecordings,
+							  startAllTargets, stopAllTargets] {
+		auto stateName = [](DualRecording::State state) {
+			switch (state) {
+			case DualRecording::Recording: return QStringLiteral("Recording");
+			case DualRecording::Stopping: return QStringLiteral("Stopping");
+			case DualRecording::Failed: return QStringLiteral("Failed");
+			default: return QStringLiteral("Ready");
+			}
+		};
+		const auto horizontal = horizontalRecording->state.load();
+		const auto vertical = verticalRecording->state.load();
+		recordingStatus->setText(tr("Horizontal: %1 · Vertical: %2 · MKV (H.264/AAC)")
+					 .arg(stateName(horizontal), stateName(vertical)));
+		const bool recording = horizontal == DualRecording::Recording || horizontal == DualRecording::Stopping ||
+				       vertical == DualRecording::Recording || vertical == DualRecording::Stopping;
+		recordBoth->setEnabled(!recording);
+		stopRecordings->setEnabled(recording);
+		startAllTargets->setEnabled(!streamDestinations.empty());
+		stopAllTargets->setEnabled(std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
+			const auto state = destination->state.load();
+			return state == StreamDestination::Connecting || state == StreamDestination::Live || state == StreamDestination::Stopping;
+		}));
+	});
 	connect(targets, &QListWidget::currentRowChanged, this, updateDestinations);
 	updateDestinations();
 	timer->start(250);

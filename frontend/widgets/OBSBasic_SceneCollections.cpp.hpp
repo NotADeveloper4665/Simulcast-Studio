@@ -1547,6 +1547,7 @@ void OBSBasic::SaveProjectDeferred()
 
 void OBSBasic::ClearSceneData()
 {
+	StopDualRecordings();
 	StopExtraStreams();
 	if (verticalPreview)
 		verticalPreview->ResetEditingState();
