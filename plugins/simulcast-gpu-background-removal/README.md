@@ -1,0 +1,7 @@
+# Simulcast Background Removal (Rust GPU port)
+
+Based on https://github.com/royshil/obs-backgroundremoval/tree/d177d33197099dbeb5ccd430923de39fb941ea19, by Roy Shilkrot and Kaito Udagawa. The MediaPipe landscape network and compositor effect source are preserved, with the 55 original weight/bias arrays converted into Rust data (Google LLC / Kaito Udagawa, Apache-2.0). Model: onnx-community/mediapipe_selfie_segmentation_landscape@2497d5bec26c626c7b3c4edc6e1fefc21b64f6c3. Rust module, GPU pass scheduling and compositor lifecycle are GPL-3.0-or-later. See included licenses.
+
+Filter: **AI Background Removal (GPU)**. Uses OBS GPU rendering, no ONNX runtime, CUDA SDK, downloads at runtime, or CPU readback. Transparent background by default; optional background blur with strength and focus sliders. Failure draws nothing rather than leaking an unfiltered frame. Rebuilds when target dimensions change; inference is cached between render passes within a video tick.
+
+This is an initial port, not a verified performance or visual parity claim. GPU shader compilation, visual segmentation and blur, alpha/color correctness, Studio Mode, clones, and simultaneous multistream/recording need hardware testing. The existing experimental ONNX plugin is left separate and unchanged. Fedora compatibility RPM enables this core module; other package workflows are unchanged.

@@ -50,7 +50,7 @@ jobs:
           rustup component add rustfmt clippy
           rustc --version
           cargo --version
-          cmake --preset fedora -DENABLE_SIMULCAST_BACKGROUND_REMOVAL=ON -DENABLE_BROWSER=ON -DCEF_ROOT_DIR="$CEF_ROOT_DIR" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
+          cmake --preset fedora -DENABLE_SIMULCAST_BACKGROUND_REMOVAL=ON -DENABLE_SIMULCAST_GPU_BACKGROUND_REMOVAL=ON -DENABLE_BROWSER=ON -DCEF_ROOT_DIR="$CEF_ROOT_DIR" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
           cmake --build build_fedora --parallel 4
       - name: Build and test native Rust background removal
         shell: bash
@@ -94,10 +94,12 @@ jobs:
           ldd /usr/lib64/obs-studio-rust/obs-modules/plugins/simulcast-background-removal.so | tee dist/background-removal-ldd.txt
           if grep -q 'not found' dist/background-removal-ldd.txt; then exit 1; fi
           core=/usr/lib64/obs-studio-rust/obs-modules/core
-          for file in obs-browser.so obs-browser-page libcef.so icudtl.dat resources.pak v8_context_snapshot.bin chrome-sandbox; do
+          for file in simulcast-gpu-background-removal.so obs-browser.so obs-browser-page libcef.so icudtl.dat resources.pak v8_context_snapshot.bin chrome-sandbox; do
             test -f "$core/$file"
           done
           test -d "$core/locales"
+          ldd "$core/simulcast-gpu-background-removal.so" | tee dist/gpu-background-removal-ldd.txt
+          if grep -q 'not found' dist/gpu-background-removal-ldd.txt; then exit 1; fi
           ldd "$core/obs-browser.so" | tee dist/browser-module-ldd.txt
           ldd "$core/obs-browser-page" | tee dist/browser-helper-ldd.txt
           if grep -q 'not found' dist/browser-*-ldd.txt; then exit 1; fi
@@ -129,6 +131,7 @@ jobs:
           grep -F "$candidate/libobs.so.30" dist/plugin-probe-ldd.txt
           xvfb-run -a env LD_LIBRARY_PATH="$candidate" /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data | tee dist/plugin-probe-result.txt
           xvfb-run -a env LD_LIBRARY_PATH="$candidate" /tmp/stock-probe/load-filter "$candidate/obs-modules/plugins/simulcast-background-removal.so" /usr/share/obs-studio-rust/obs-modules/plugins/simulcast-background-removal simulcast_onnx_background_removal "AI Background Removal (Simulcast)" | tee dist/background-removal-registration.txt
+          xvfb-run -a env LD_LIBRARY_PATH="$candidate" /tmp/stock-probe/load-filter "$candidate/obs-modules/core/simulcast-gpu-background-removal.so" /usr/share/obs-studio-rust/obs-modules/core/simulcast-gpu-background-removal simulcast_gpu_background_removal "AI Background Removal (GPU)" | tee dist/gpu-background-removal-registration.txt
           python3 ci/plugin-compat/compare-symbols.py /usr/lib64/libobs.so.30 "$candidate/libobs.so.30" | tee dist/libobs-symbol-report.txt
           python3 ci/plugin-compat/compare-symbols.py /usr/lib64/libobs-frontend-api.so.30 "$candidate/libobs-frontend-api.so.30" | tee dist/frontend-symbol-report.txt
       - uses: actions/upload-artifact@v4

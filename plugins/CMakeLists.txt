@@ -130,4 +130,9 @@ add_core_module(win-capture PLATFORMS WINDOWS)
 add_core_module(win-dshow PLATFORMS WINDOWS)
 add_core_module(win-wasapi PLATFORMS WINDOWS)
 
+option(ENABLE_SIMULCAST_GPU_BACKGROUND_REMOVAL "Build Rust GPU background removal" OFF)
+if(ENABLE_SIMULCAST_GPU_BACKGROUND_REMOVAL AND OS_LINUX)
+  add_core_module(simulcast-gpu-background-removal PLATFORMS LINUX)
+endif()
+
 set_obs_core_modules()
