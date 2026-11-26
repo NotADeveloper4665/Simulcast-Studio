@@ -247,7 +247,7 @@ void OBSStudioAPI::obs_frontend_streaming_stop()
 
 bool OBSStudioAPI::obs_frontend_streaming_active()
 {
-	return os_atomic_load_bool(&streaming_active);
+	return os_atomic_load_bool(&streaming_active) || main->multiStreamFrontendLive.load();
 }
 
 void OBSStudioAPI::obs_frontend_recording_start()

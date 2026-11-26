@@ -1,0 +1,81 @@
+name: OBS plugin compatibility (Fedora)
+on:
+  push:
+    branches: [feature/obs-plugin-compatibility]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: simulcast-plugin-compat
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    timeout-minutes: 90
+    steps:
+      - name: Install Fedora build dependencies
+        run: |
+          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3
+          dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
+          dnf -y builddep obs-studio
+          dnf -y install x264-devel obs-studio-devel binutils xorg-x11-server-Xvfb xorg-x11-xauth
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Compile independent stock OBS plugin
+        run: |
+          mkdir -p /tmp/stock-probe/data
+          rpm -q obs-studio-devel
+          cc -shared -fPIC ci/plugin-compat/stock-filter.c -o /tmp/stock-probe/stock-filter.so $(pkg-config --cflags --libs libobs)
+          cc ci/plugin-compat/load-filter.c -o /tmp/stock-probe/load-filter $(pkg-config --cflags --libs libobs)
+          xvfb-run -a /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data
+      - name: Configure and compile
+        shell: bash
+        run: |
+          export CARGO_HOME=/opt/simulcast-cargo
+          export RUSTUP_HOME=/opt/simulcast-rustup
+          export PATH="$CARGO_HOME/bin:$PATH"
+          curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/simulcast-rustup.sh
+          sh /tmp/simulcast-rustup.sh -y --profile minimal --default-toolchain 1.98.1 --no-modify-path
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo --version
+          cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
+          cmake --build build_fedora --parallel 4
+      - name: Package and validate Fedora RPM
+        shell: bash
+        run: |
+          set -euo pipefail
+          rpm_release=$((GITHUB_RUN_NUMBER + 5))
+          cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0 -D CPACK_RPM_PACKAGE_RELEASE="$rpm_release"
+          mkdir -p dist
+          cp build_fedora/rpm/simulcast-studio-*.fc44.x86_64.rpm dist/
+          rpm_file=$(find dist -maxdepth 1 -name '*.rpm')
+          test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
+          test "$(rpm -qp --qf '%{NAME} %{ARCH}' "$rpm_file")" = 'simulcast-studio x86_64'
+          rpm -qpl "$rpm_file" | tee /tmp/simulcast-package-files
+          grep -Fx /usr/bin/simulcast-studio /tmp/simulcast-package-files
+          dnf -y install "$rpm_file"
+          ldd /usr/bin/simulcast-studio | tee /tmp/simulcast-ldd
+          if grep -q 'not found' /tmp/simulcast-ldd; then exit 1; fi
+          QT_QPA_PLATFORM=offscreen simulcast-studio --version
+          (cd dist && sha256sum *.rpm > SHA256SUMS)
+      - name: Verify external plugin against installed Simulcast
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate=/usr/lib64/obs-studio-rust
+          test -f "$candidate/libobs.so.30"
+          LD_LIBRARY_PATH="$candidate" ldd /tmp/stock-probe/load-filter | tee dist/plugin-probe-ldd.txt
+          grep -F "$candidate/libobs.so.30" dist/plugin-probe-ldd.txt
+          xvfb-run -a env LD_LIBRARY_PATH="$candidate" /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data | tee dist/plugin-probe-result.txt
+          python3 ci/plugin-compat/compare-symbols.py /usr/lib64/libobs.so.30 "$candidate/libobs.so.30" | tee dist/libobs-symbol-report.txt
+          python3 ci/plugin-compat/compare-symbols.py /usr/lib64/libobs-frontend-api.so.30 "$candidate/libobs-frontend-api.so.30" | tee dist/frontend-symbol-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulcast-obs-plugin-compatibility
+          path: dist/*
+          if-no-files-found: error

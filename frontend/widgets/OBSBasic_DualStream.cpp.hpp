@@ -991,6 +991,7 @@ bool OBSBasic::ExtraStreamsActive() const
 
 void OBSBasic::StopExtraStreams()
 {
+	multiStreamFrontendLive.store(false);
 	bool hadOutputs = false;
 	for (const auto &destination : streamDestinations) {
 		if (!destination->output) {
@@ -1480,6 +1481,7 @@ void OBSBasic::InitDualStreamDock()
 		const bool live = std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
 			return destination->state.load() == StreamDestination::Live;
 		});
+		multiStreamFrontendLive.store(active && (live || wasLive));
 		if (live && !wasLive)
 			OnEvent(OBS_FRONTEND_EVENT_STREAMING_STARTED);
 		if (wasActive && !active) {

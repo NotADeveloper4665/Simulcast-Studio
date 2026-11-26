@@ -19,6 +19,7 @@
 
 #include <obs.h>
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -34,16 +35,8 @@ inline constexpr std::string_view kLegacyDataPathVariable{"OBS_LEGACY_PLUGINS_DA
 
 inline std::string getEnvironmentVariable(std::string_view variableName)
 {
-	std::unique_ptr<char> variablePointer{};
-	variablePointer.reset(getenv(variableName.data()));
-
-	if (!variablePointer) {
-		return {};
-	}
-
-	std::string result{variablePointer.release()};
-
-	return result;
+	const char *value = std::getenv(variableName.data());
+	return value ? std::string(value) : std::string{};
 }
 
 inline int loadPluginsByInfo(const ModuleLoadInfo &info, ModuleList &failedModules)
@@ -60,7 +53,7 @@ inline int loadPluginsByInfo(const ModuleLoadInfo &info, ModuleList &failedModul
 		}
 	}
 
+	const auto count = static_cast<int>(result.count);
 	obs_module_failure_info_free(std::addressof(result));
-
-	return static_cast<int>(result.count);
+	return count;
 }

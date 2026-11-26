@@ -92,7 +92,9 @@ namespace OBS {
 State PluginManager::loadPlugins(bool usePortableMode)
 {
 	State userPluginState = State::Failure;
-	std::string userPluginPath = getEnvironmentVariable(kPathVariable);
+	std::string userPluginPath = getEnvironmentVariable("SIMULCAST_OBS_PLUGINS_PATH");
+	if (userPluginPath.empty())
+		userPluginPath = getEnvironmentVariable(kPathVariable);
 
 	if (!userPluginPath.empty()) {
 		std::string binaryPath{userPluginPath};
@@ -162,6 +164,13 @@ State PluginManager::loadLegacyPlugins(bool usePortableMode)
 
 	std::string userPluginPath = getEnvironmentVariable(kLegacyBinaryPathVariable);
 	std::string userDataPath = getEnvironmentVariable(kLegacyDataPathVariable);
+	if (userPluginPath.empty() && userDataPath.empty()) {
+		const auto data = getEnvironmentVariable("OBS_PLUGINS_DATA_PATH");
+		if (!data.empty()) {
+			userPluginPath = getEnvironmentVariable(kPathVariable);
+			userDataPath = data;
+		}
+	}
 
 	if (!userPluginPath.empty() && !userDataPath.empty()) {
 		std::string binaryPath{userPluginPath};

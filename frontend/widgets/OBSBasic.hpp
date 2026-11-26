@@ -543,6 +543,8 @@ public:
 	QJsonArray MultiStreamDestinations() const;
 	bool MultiStreamEnabled() const;
 	bool MultiStreamActive() const;
+	// Read-only frontend state snapshot, safe for non-UI plugin callers.
+	std::atomic_bool multiStreamFrontendLive{false};
 	bool MultiStreamEditable();
 	void SaveMultiStreamSettings(bool enabled, const QJsonArray &destinations);
 	bool EditStreamDestination(QJsonObject &entry, QWidget *parent);
