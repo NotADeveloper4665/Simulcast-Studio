@@ -819,13 +819,144 @@ void OBSBasic::StartStreamDestination(StreamDestination &destination)
 	}
 }
 
+void OBSBasic::CloneSourceWithFilters(OBSScene scene, OBSSceneItem item)
+{
+	if (!scene || !item)
+		return;
+	auto *source = obs_sceneitem_get_source(item);
+	if (!source || !(obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) ||
+	    obs_source_is_group(source) || obs_source_is_scene(source))
+		return;
+	const QString suggestion = QString::fromUtf8(obs_source_get_name(source)) + tr(" Clone");
+	bool ok = false;
+	const QString name = QInputDialog::getText(this, tr("Clone Source"), tr("Clone name"),
+		QLineEdit::Normal, suggestion, &ok).trimmed();
+	if (!ok || name.isEmpty())
+		return;
+	OBSSourceAutoRelease existing = obs_get_source_by_name(name.toUtf8().constData());
+	if (existing) {
+		QMessageBox::warning(this, tr("Clone Source"), tr("That source name is already in use."));
+		return;
+	}
+	// Duplicate the scene item, not the capture device. The public group
+	// supplies a separate filter chain and is serialized by normal OBS scene saving.
+	auto *copy = obs_scene_add(scene, source);
+	if (!copy)
+		return;
+	obs_transform_info transform{};
+	obs_sceneitem_crop crop{};
+	obs_sceneitem_get_info2(item, &transform);
+	obs_sceneitem_get_crop(item, &crop);
+	obs_sceneitem_set_info2(copy, &transform);
+	obs_sceneitem_set_crop(copy, &crop);
+	obs_sceneitem_t *items[] = {copy};
+	auto *clone = obs_scene_insert_group(scene, name.toUtf8().constData(), items, 1);
+	if (!clone) {
+		obs_sceneitem_remove(copy);
+		return;
+	}
+	obs_sceneitem_select(item, false);
+	obs_sceneitem_select(clone, true);
+	RefreshVerticalLayers();
+	SaveProject();
+	CreateFiltersWindow(obs_sceneitem_get_source(clone));
+}
+
+QString OBSBasic::CleanSourceRecordingFolder() const
+{
+	const char *configured = Config() ? config_get_string(Config(), "Video", "CleanSourceDirectory") : nullptr;
+	if (configured && *configured)
+		return QString::fromUtf8(configured);
+	return QDir(DualRecordingFolder(false)).filePath(QStringLiteral("Clean Sources"));
+}
+
+void OBSBasic::StopCleanSourceRecording(bool force)
+{
+	if (!cleanSourceRecording)
+		return;
+	auto &recording = *cleanSourceRecording;
+	const auto state = recording.state.load();
+	if (recording.output && (state == DualRecording::Recording || state == DualRecording::Stopping)) {
+		if (!force) {
+			if (state == DualRecording::Recording) {
+				recording.state.store(DualRecording::Stopping);
+				obs_output_stop(recording.output);
+			}
+			return;
+		}
+		recording.started.Disconnect();
+		recording.stopped.Disconnect();
+		obs_output_force_stop(recording.output);
+	}
+	recording.started.Disconnect();
+	recording.stopped.Disconnect();
+	recording.output = nullptr;
+	obs_wait_for_destroy_queue();
+	if (cleanSourceCanvas)
+		obs_canvas_set_channel(cleanSourceCanvas, 0, nullptr);
+	cleanSourceCanvas = nullptr;
+	cleanSourceRecording.reset();
+	if (force)
+		cleanSourceSession = false;
+}
+
+void OBSBasic::UpdateCleanSourceRecording()
+{
+	if (isClosing() || !Config())
+		return;
+	const bool session = StreamingActive() || RecordingActive() || DualRecordingsActive();
+	if (!session) {
+		cleanSourceSession = false;
+		if (cleanSourceRecording) {
+			StopCleanSourceRecording();
+			if (!cleanSourceRecording)
+				OnDeactivate();
+		}
+		return;
+	}
+	if (cleanSourceSession || cleanSourceRecording)
+		return;
+	cleanSourceSession = true;
+	if (!config_get_bool(Config(), "Video", "RecordCleanSource"))
+		return;
+	const char *uuid = config_get_string(Config(), "Video", "CleanSourceUuid");
+	OBSSourceAutoRelease source = uuid && *uuid ? obs_get_source_by_uuid(uuid) : nullptr;
+	obs_video_info video{};
+	if (!source || obs_source_removed(source) || !(obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO) ||
+	    !obs_get_video_info(&video)) {
+		blog(LOG_WARNING, "Simulcast: clean recording source unavailable");
+		return;
+	}
+	// Separate ephemeral canvas: no scene items, overlays or program transitions.
+	const uint32_t width = obs_source_get_width(source) & ~3u;
+	const uint32_t height = obs_source_get_height(source) & ~1u;
+	if (width < 4 || height < 2) {
+		blog(LOG_WARNING, "Simulcast: clean recording source has no video dimensions");
+		return;
+	}
+	video.base_width = video.output_width = width;
+	video.base_height = video.output_height = height;
+	cleanSourceCanvas = obs_canvas_create_private("Simulcast Clean Source", &video, DEVICE);
+	if (!cleanSourceCanvas || !obs_canvas_has_video(cleanSourceCanvas)) {
+		cleanSourceCanvas = nullptr;
+		blog(LOG_WARNING, "Simulcast: could not create clean recording canvas");
+		return;
+	}
+	obs_canvas_set_channel(cleanSourceCanvas, 0, source);
+	cleanSourceRecording = std::make_unique<DualRecording>();
+	cleanSourceRecording->cleanSource = true;
+	StartDualRecording(*cleanSourceRecording);
+	if (cleanSourceRecording->state.load() == DualRecording::Failed)
+		StopCleanSourceRecording();
+}
+
 void OBSBasic::StartDualRecording(DualRecording &recording)
 {
 	const auto state = recording.state.load();
 	if (state == DualRecording::Recording || state == DualRecording::Stopping)
 		return;
 
-	const QString directory = DualRecordingFolder(recording.vertical);
+	const QString directory = recording.cleanSource ? CleanSourceRecordingFolder() : DualRecordingFolder(recording.vertical);
 	if (!QDir().mkpath(directory)) {
 		recording.state.store(DualRecording::Failed);
 		QMessageBox::warning(this, tr("Dual Recording"), tr("Could not create the recording folder:\n%1").arg(directory));
@@ -833,7 +964,9 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 	}
 
 	video_t *video = obs_get_video();
-	if (recording.vertical) {
+	if (recording.cleanSource) {
+		video = cleanSourceCanvas ? obs_canvas_get_video(cleanSourceCanvas) : nullptr;
+	} else if (recording.vertical) {
 		if (!GetVerticalScene(true)) {
 			QMessageBox::information(this, tr("Dual Recording"), tr("Add a source to the vertical scene before recording it."));
 			return;
@@ -845,7 +978,7 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 		return;
 	}
 
-	const QString prefix = recording.vertical ? QStringLiteral("Simulcast-Vertical")
+	const QString prefix = recording.cleanSource ? QStringLiteral("Simulcast-Clean-Source") : recording.vertical ? QStringLiteral("Simulcast-Vertical")
 						  : QStringLiteral("Simulcast-Horizontal");
 	const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
 	QString path;
@@ -986,7 +1119,8 @@ bool OBSBasic::ExtraStreamsActive() const
 		return state == StreamDestination::Connecting || state == StreamDestination::Live ||
 		       state == StreamDestination::Stopping;
 	});
-	return destinationsActive || DualRecordingsActive();
+	return destinationsActive || DualRecordingsActive() || (cleanSourceRecording &&
+		(cleanSourceRecording->state.load() == DualRecording::Recording || cleanSourceRecording->state.load() == DualRecording::Stopping));
 }
 
 void OBSBasic::StopExtraStreams()
@@ -1375,6 +1509,11 @@ void OBSBasic::InitDualStreamDock()
 			}
 
 			QMenu menu(verticalLayers);
+			menu.addAction(tr("Clone Source (Independent Filters)"), this, [this, id] {
+				auto target = GetVerticalScene(false);
+				if (target)
+					CloneSourceWithFilters(target, OBSSceneItem(obs_scene_find_sceneitem_by_id(target, id)));
+			});
 			menu.addAction(tr("Rename"), this, [this, changeLayer] {
 				changeLayer([this](obs_sceneitem_t *item) {
 					auto *source = obs_sceneitem_get_source(item);
@@ -1492,6 +1631,7 @@ void OBSBasic::InitDualStreamDock()
 			sysTrayStream->setText(active ? QTStr("Basic.Main.StopStreaming") : QTStr("Basic.Main.StartStreaming"));
 		wasActive = active;
 		wasLive = active && (live || wasLive);
+		UpdateCleanSourceRecording();
 		auto stateName = [](DualRecording::State state) {
 			switch (state) {
 			case DualRecording::Recording: return QStringLiteral("Recording");
@@ -1501,7 +1641,8 @@ void OBSBasic::InitDualStreamDock()
 			}
 		};
 		recordingStatus->setText(tr("Horizontal: %1 · Vertical: %2 · MKV (H.264/AAC)")
-			.arg(stateName(horizontalRecording->state.load()), stateName(verticalRecording->state.load())));
+			.arg(stateName(horizontalRecording->state.load()), stateName(verticalRecording->state.load())) +
+			(cleanSourceRecording ? tr(" · Clean source: %1").arg(stateName(cleanSourceRecording->state.load())) : QString()));
 	});
 	timer->start(250);
 	verticalPreview->setFocusPolicy(Qt::StrongFocus);

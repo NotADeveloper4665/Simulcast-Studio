@@ -638,6 +638,11 @@ void OBSBasic::CreateSourcePopupMenu(int idx, bool preview)
 	popup.addSeparator();
 
 	if (sourceSelected) {
+		if (hasVideo && !obs_source_is_group(source) && !obs_source_is_scene(source)) {
+			popup.addAction(tr("Clone Source (Independent Filters)"), this, [this, sceneItem] {
+				CloneSourceWithFilters(GetCurrentScene(), sceneItem);
+			});
+		}
 		// Sources list menu entries
 		if (!preview) {
 			colorMenu = new QMenu(QTStr("ChangeBG"));

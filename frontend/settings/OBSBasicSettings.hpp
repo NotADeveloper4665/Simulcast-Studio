@@ -71,6 +71,11 @@ private:
 	QGroupBox *multiStreamGroup = nullptr;
 	void LoadMultiStreamSettings();
 	void SaveMultiStreamSettings();
+	bool cleanSourceChanged = false;
+	QCheckBox *cleanSourceEnabled = nullptr;
+	QComboBox *cleanSourcePicker = nullptr;
+	QLineEdit *cleanSourceDirectory = nullptr;
+	void LoadCleanSourceSettings();
 	bool dualFoldersChanged = false;
 	QLineEdit *dualHorizontalPath = nullptr;
 	QLineEdit *dualVerticalPath = nullptr;
@@ -159,7 +164,7 @@ private:
 
 	inline bool Changed() const
 	{
-		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged || multiStreamChanged || stream1Changed || audioChanged ||
+		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged || cleanSourceChanged || multiStreamChanged || stream1Changed || audioChanged ||
 		       videoChanged || advancedChanged || hotkeysChanged || a11yChanged;
 	}
 
@@ -172,6 +177,7 @@ private:
 		multiStreamChanged = false;
 		outputsChanged = false;
 		dualFoldersChanged = false;
+		cleanSourceChanged = false;
 		audioChanged = false;
 		videoChanged = false;
 		hotkeysChanged = false;

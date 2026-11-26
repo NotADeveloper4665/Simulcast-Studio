@@ -1567,6 +1567,7 @@ void OBSBasic::SaveProjectDeferred()
 
 void OBSBasic::ClearSceneData()
 {
+	StopCleanSourceRecording(true);
 	StopDualRecordings();
 	StopExtraStreams();
 	ClearVerticalStudioState();

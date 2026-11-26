@@ -505,11 +505,19 @@ public:
 		OBSSignal started;
 		OBSSignal stopped;
 		bool vertical = false;
+		bool cleanSource = false;
 	};
 
 	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
 	std::unique_ptr<DualRecording> horizontalRecording;
 	std::unique_ptr<DualRecording> verticalRecording;
+	std::unique_ptr<DualRecording> cleanSourceRecording;
+	OBSCanvasAutoRelease cleanSourceCanvas;
+	bool cleanSourceSession = false;
+	QString CleanSourceRecordingFolder() const;
+	void UpdateCleanSourceRecording();
+	void StopCleanSourceRecording(bool force = false);
+	void CloneSourceWithFilters(OBSScene scene, OBSSceneItem item);
 	QListWidget *verticalScenes = nullptr;
 	QStringList verticalSceneOrder;
 	QString verticalSceneUuid;

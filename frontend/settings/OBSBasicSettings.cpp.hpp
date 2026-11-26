@@ -406,6 +406,39 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	dualVerticalPath = makeDualFolder(tr("Vertical folder"), true);
 	ui->verticalLayout_6->insertWidget(ui->verticalLayout_6->indexOf(ui->outputModePages), dualFolders);
 
+	auto *cleanGroup = new QGroupBox(tr("Clean Source Recording"), ui->videoPage);
+	auto *cleanLayout = new QFormLayout(cleanGroup);
+	cleanSourceEnabled = new QCheckBox(tr("Record selected source separately while streaming or recording"), cleanGroup);
+	cleanLayout->addRow(cleanSourceEnabled);
+	cleanSourcePicker = new QComboBox(cleanGroup);
+	cleanLayout->addRow(tr("Source"), cleanSourcePicker);
+	cleanSourceDirectory = new QLineEdit(cleanGroup);
+	auto *cleanFolderRow = new QWidget(cleanGroup);
+	auto *cleanFolderLayout = new QHBoxLayout(cleanFolderRow);
+	cleanFolderLayout->setContentsMargins(0, 0, 0, 0);
+	auto *cleanBrowse = new QPushButton(tr("Browse…"), cleanFolderRow);
+	cleanFolderLayout->addWidget(cleanSourceDirectory, 1);
+	cleanFolderLayout->addWidget(cleanBrowse);
+	cleanLayout->addRow(tr("Folder"), cleanFolderRow);
+	auto *cleanHint = new QLabel(tr("Records source video without scene overlays. Audio uses the normal mix (track 1). An additional encoder is required."), cleanGroup);
+	cleanHint->setWordWrap(true);
+	cleanLayout->addRow(cleanHint);
+	ui->verticalLayout->insertWidget(1, cleanGroup);
+	auto cleanDirty = [this] {
+		if (!loading) {
+			cleanSourceChanged = true;
+			EnableApplyButton(true);
+		}
+	};
+	connect(cleanSourceEnabled, &QCheckBox::toggled, this, cleanDirty);
+	connect(cleanSourcePicker, qOverload<int>(&QComboBox::currentIndexChanged), this, cleanDirty);
+	connect(cleanSourceDirectory, &QLineEdit::textChanged, this, cleanDirty);
+	connect(cleanBrowse, &QPushButton::clicked, this, [this] {
+		const auto path = QFileDialog::getExistingDirectory(this, tr("Clean Source Recording Folder"), cleanSourceDirectory->text());
+		if (!path.isEmpty())
+			cleanSourceDirectory->setText(path);
+	});
+
 	main->EnableOutputs(false);
 
 	ui->listWidget->setAttribute(Qt::WA_MacShowFocusRect, false);
@@ -1770,6 +1803,33 @@ void OBSBasicSettings::LoadFPSData()
 
 	ui->fpsType->setCurrentIndex(fpsType);
 	ui->fpsTypes->setCurrentIndex(fpsType);
+}
+
+void OBSBasicSettings::LoadCleanSourceSettings()
+{
+	const QSignalBlocker enabledBlock(cleanSourceEnabled);
+	const QSignalBlocker pickerBlock(cleanSourcePicker);
+	const QSignalBlocker directoryBlock(cleanSourceDirectory);
+	cleanSourceEnabled->setChecked(config_get_bool(main->Config(), "Video", "RecordCleanSource"));
+	const char *stored = config_get_string(main->Config(), "Video", "CleanSourceUuid");
+	const QString uuid = stored ? QString::fromUtf8(stored) : QString();
+	cleanSourcePicker->clear();
+	cleanSourcePicker->addItem(tr("Select a source"), QString());
+	obs_enum_sources([](void *data, obs_source_t *source) {
+		if (obs_source_get_type(source) == OBS_SOURCE_TYPE_INPUT &&
+		    (obs_source_get_output_flags(source) & OBS_SOURCE_VIDEO)) {
+			auto *picker = static_cast<QComboBox *>(data);
+			picker->addItem(QString::fromUtf8(obs_source_get_name(source)), QString::fromUtf8(obs_source_get_uuid(source)));
+		}
+		return true;
+	}, cleanSourcePicker);
+	int index = cleanSourcePicker->findData(uuid);
+	if (index < 0 && !uuid.isEmpty()) {
+		cleanSourcePicker->addItem(tr("Previously selected source (unavailable)"), uuid);
+		index = cleanSourcePicker->count() - 1;
+	}
+	cleanSourcePicker->setCurrentIndex(std::max(0, index));
+	cleanSourceDirectory->setText(main->CleanSourceRecordingFolder());
 }
 
 void OBSBasicSettings::LoadVideoSettings()
@@ -3253,6 +3313,9 @@ void OBSBasicSettings::LoadSettings(bool changedOnly)
 	if (!changedOnly || audioChanged) {
 		LoadAudioSettings();
 	}
+	if (!changedOnly || cleanSourceChanged) {
+		LoadCleanSourceSettings();
+	}
 	if (!changedOnly || videoChanged) {
 		LoadVideoSettings();
 	}
@@ -4011,6 +4074,12 @@ void OBSBasicSettings::SaveSettings()
 	}
 	if (audioChanged) {
 		SaveAudioSettings();
+	}
+	if (cleanSourceChanged) {
+		const auto uuid = cleanSourcePicker->currentData().toString().toUtf8();
+		config_set_bool(main->Config(), "Video", "RecordCleanSource", cleanSourceEnabled->isChecked() && !uuid.isEmpty());
+		config_set_string(main->Config(), "Video", "CleanSourceUuid", uuid.constData());
+		config_set_string(main->Config(), "Video", "CleanSourceDirectory", cleanSourceDirectory->text().trimmed().toUtf8().constData());
 	}
 	if (videoChanged) {
 		SaveVideoSettings();
