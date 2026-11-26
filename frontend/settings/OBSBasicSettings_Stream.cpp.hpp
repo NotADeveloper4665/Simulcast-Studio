@@ -1,4 +1,9 @@
 #include "frontend/build/frontend-settings.pch.hpp"
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSignalBlocker>
+#include <QListWidget>
+#include <QUrl>
 
 static void setup_ladder_table(QTableWidget *table);
 
@@ -104,27 +109,82 @@ void OBSBasicSettings::InitStreamPage()
 	ui->twitchAddonDropdown->addItem(QTStr("Basic.Settings.Stream.TTVAddon.FFZ"));
 	ui->twitchAddonDropdown->addItem(QTStr("Basic.Settings.Stream.TTVAddon.Both"));
 
-	auto *youtubeDualStream = new QGroupBox(QTStr("Basic.Settings.Stream.YouTubeDualStream"), this);
-	auto *youtubeDualStreamLayout = new QFormLayout(youtubeDualStream);
-	auto *youtubeDualStreamInfo = new QLabel(QTStr("Basic.Settings.Stream.YouTubeDualStreamHelp"), youtubeDualStream);
-	youtubeDualStreamInfo->setWordWrap(true);
-	youtubeDualStreamLayout->addRow(youtubeDualStreamInfo);
-	auto *youtubeServer = new QLineEdit(youtubeDualStream);
-	youtubeServer->setObjectName(QStringLiteral("youtubeDualStreamServer"));
-	youtubeServer->setText(QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2"));
-	auto *youtubeHorizontalKey = new QLineEdit(youtubeDualStream);
-	youtubeHorizontalKey->setObjectName(QStringLiteral("youtubeDualStreamHorizontalKey"));
-	youtubeHorizontalKey->setEchoMode(QLineEdit::Password);
-	auto *youtubeVerticalKey = new QLineEdit(youtubeDualStream);
-	youtubeVerticalKey->setObjectName(QStringLiteral("youtubeDualStreamVerticalKey"));
-	youtubeVerticalKey->setEchoMode(QLineEdit::Password);
-	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.Server"), youtubeServer);
-	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.HorizontalKey"), youtubeHorizontalKey);
-	youtubeDualStreamLayout->addRow(QTStr("Basic.Settings.Stream.YouTube.VerticalKey"), youtubeVerticalKey);
-	ui->verticalLayout_5->addWidget(youtubeDualStream);
-	connect(youtubeServer, &QLineEdit::textChanged, this, &OBSBasicSettings::Stream1Changed);
-	connect(youtubeHorizontalKey, &QLineEdit::textChanged, this, &OBSBasicSettings::Stream1Changed);
-	connect(youtubeVerticalKey, &QLineEdit::textChanged, this, &OBSBasicSettings::Stream1Changed);
+	multiStreamGroup = new QGroupBox(tr("Streaming destinations"), ui->streamPage);
+	auto *multiLayout = new QVBoxLayout(multiStreamGroup);
+	multiStreamMode = new QCheckBox(tr("Use multistream instead of single-service streaming"), multiStreamGroup);
+	multiLayout->addWidget(multiStreamMode);
+	auto *hint = new QLabel(tr("Add YouTube, Twitch, Kick or another RTMP(S) destination. Each destination can use either canvas. Start Streaming starts all configured destinations."), multiStreamGroup);
+	hint->setWordWrap(true);
+	multiLayout->addWidget(hint);
+	multiStreamList = new QListWidget(multiStreamGroup);
+	multiStreamList->setMinimumHeight(100);
+	multiLayout->addWidget(multiStreamList);
+	auto *buttons = new QHBoxLayout();
+	auto *add = new QPushButton(tr("Add"), multiStreamGroup);
+	auto *edit = new QPushButton(tr("Edit"), multiStreamGroup);
+	auto *remove = new QPushButton(tr("Remove"), multiStreamGroup);
+	buttons->addWidget(add);
+	buttons->addWidget(edit);
+	buttons->addWidget(remove);
+	buttons->addStretch();
+	multiLayout->addLayout(buttons);
+	ui->verticalLayout_5->insertWidget(0, multiStreamGroup);
+	auto dirty = [this] {
+		if (!loading) {
+			multiStreamChanged = true;
+			EnableApplyButton(true);
+		}
+	};
+	auto updateMode = [this] {
+		// Retain existing account/service controls as an explicit single-stream fallback.
+		ui->widget_5->setVisible(!multiStreamMode->isChecked());
+	};
+	connect(multiStreamMode, &QCheckBox::toggled, this, [dirty, updateMode](bool) { dirty(); updateMode(); });
+	auto editEntry = [this, dirty](bool existing) {
+		auto *item = existing ? multiStreamList->currentItem() : nullptr;
+		if (existing && !item)
+			return;
+		QJsonObject entry = item ? item->data(Qt::UserRole).toJsonObject() : QJsonObject{};
+		if (!main->EditStreamDestination(entry, this))
+			return;
+		for (int i = 0; i < multiStreamList->count(); ++i) {
+			auto *other = multiStreamList->item(i);
+			if (other == item)
+				continue;
+			const auto old = other->data(Qt::UserRole).toJsonObject();
+			const auto host = [](const QJsonObject &obj) { return QUrl(obj.value("server").toString()).host().toLower(); };
+			const auto youtube = [](const QString &h) { return h == QStringLiteral("youtube.com") || h.endsWith(QStringLiteral(".youtube.com")); };
+			if (old.value("key") == entry.value("key") &&
+			    (old.value("server") == entry.value("server") || (youtube(host(old)) && youtube(host(entry))))) {
+				QMessageBox::warning(this, tr("Duplicate Stream Key"), tr("Use a distinct stream key for each destination on the same service."));
+				return;
+			}
+		}
+		if (!item) {
+			item = new QListWidgetItem(multiStreamList);
+			multiStreamList->setCurrentItem(item);
+		}
+		item->setData(Qt::UserRole, QVariant::fromValue(entry));
+		item->setText(tr("%1 · %2 · %3 kbps").arg(entry.value("name").toString(),
+			entry.value("vertical").toBool() ? tr("Vertical") : tr("Horizontal")).arg(entry.value("bitrate").toInt()));
+		dirty();
+	};
+	connect(add, &QPushButton::clicked, this, [editEntry] { editEntry(false); });
+	connect(edit, &QPushButton::clicked, this, [editEntry] { editEntry(true); });
+	connect(multiStreamList, &QListWidget::itemDoubleClicked, this, [editEntry](QListWidgetItem *) { editEntry(true); });
+	connect(remove, &QPushButton::clicked, this, [this, dirty] {
+		if (multiStreamList->currentRow() >= 0) {
+			delete multiStreamList->takeItem(multiStreamList->currentRow());
+			dirty();
+		}
+	});
+	auto refreshButtons = [this, edit, remove] {
+		const bool selected = multiStreamList->currentItem() != nullptr;
+		edit->setEnabled(selected);
+		remove->setEnabled(selected);
+	};
+	connect(multiStreamList, &QListWidget::currentItemChanged, this, refreshButtons);
+	refreshButtons();
 
 	connect(ui->ignoreRecommended, &QCheckBox::clicked, this, &OBSBasicSettings::DisplayEnforceWarning);
 	connect(ui->ignoreRecommended, &QCheckBox::toggled, this, &OBSBasicSettings::UpdateResFPSLimits);
@@ -149,6 +209,31 @@ void OBSBasicSettings::InitStreamPage()
 		&OBSBasicSettings::UpdateMultitrackVideoLadderStale);
 }
 
+void OBSBasicSettings::LoadMultiStreamSettings()
+{
+	const QSignalBlocker block(multiStreamMode);
+	multiStreamMode->setChecked(main->MultiStreamEnabled());
+	ui->widget_5->setVisible(!multiStreamMode->isChecked());
+	multiStreamList->clear();
+	const auto entries = main->MultiStreamDestinations();
+	for (const auto &value : entries) {
+		const auto entry = value.toObject();
+		auto *item = new QListWidgetItem(multiStreamList);
+		item->setData(Qt::UserRole, QVariant::fromValue(entry));
+		item->setText(tr("%1 · %2 · %3 kbps").arg(entry.value("name").toString(),
+			entry.value("vertical").toBool() ? tr("Vertical") : tr("Horizontal")).arg(entry.value("bitrate").toInt()));
+	}
+	multiStreamGroup->setEnabled(main->MultiStreamEditable());
+}
+
+void OBSBasicSettings::SaveMultiStreamSettings()
+{
+	QJsonArray entries;
+	for (int i = 0; i < multiStreamList->count(); ++i)
+		entries.append(multiStreamList->item(i)->data(Qt::UserRole).toJsonObject());
+	main->SaveMultiStreamSettings(multiStreamMode->isChecked(), entries);
+}
+
 void OBSBasicSettings::LoadStream1Settings()
 {
 	bool ignoreRecommended = config_get_bool(main->Config(), "Stream1", "IgnoreRecommended");
@@ -162,19 +247,6 @@ void OBSBasicSettings::LoadStream1Settings()
 	bool is_whip = (strcmp(type, "whip_custom") == 0);
 
 	loading = true;
-	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamServer"))) {
-		const char *value = config_get_string(main->Config(), "Stream1", "DualStreamYoutubeServer");
-		if (value && *value)
-			field->setText(QString::fromUtf8(value));
-	}
-	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamHorizontalKey"))) {
-		const char *value = config_get_string(main->Config(), "Stream1", "DualStreamYoutubeHorizontalKey");
-		field->setText(QString::fromUtf8(value ? value : ""));
-	}
-	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamVerticalKey"))) {
-		const char *value = config_get_string(main->Config(), "Stream1", "DualStreamYoutubeVerticalKey");
-		field->setText(QString::fromUtf8(value ? value : ""));
-	}
 
 	OBSDataAutoRelease settings = obs_service_get_settings(service_obj);
 
@@ -414,12 +486,6 @@ void OBSBasicSettings::SaveStream1Settings()
 
 	main->SetService(newService);
 	main->SaveService();
-	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamServer")))
-		config_set_string(main->Config(), "Stream1", "DualStreamYoutubeServer", QT_TO_UTF8(field->text().trimmed()));
-	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamHorizontalKey")))
-		config_set_string(main->Config(), "Stream1", "DualStreamYoutubeHorizontalKey", QT_TO_UTF8(field->text().trimmed()));
-	if (auto *field = findChild<QLineEdit *>(QStringLiteral("youtubeDualStreamVerticalKey")))
-		config_set_string(main->Config(), "Stream1", "DualStreamYoutubeVerticalKey", QT_TO_UTF8(field->text().trimmed()));
 	main->auth = auth;
 	if (!!main->auth) {
 		main->auth->LoadUI();

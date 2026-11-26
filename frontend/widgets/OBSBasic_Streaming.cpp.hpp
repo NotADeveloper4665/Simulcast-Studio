@@ -39,6 +39,10 @@ void OBSBasic::DisplayStreamStartError()
 
 void OBSBasic::StartStreaming()
 {
+	if (MultiStreamEnabled()) {
+		StartMultiStream();
+		return;
+	}
 	/* Also ignore a start while one is still being prepared or connecting
 	 * (two quick obs-websocket StartStream requests): the stream output
 	 * only becomes active once it has connected. */
@@ -132,6 +136,10 @@ void OBSBasic::StartStreaming()
 
 void OBSBasic::StopStreaming()
 {
+	if (MultiStreamActive()) {
+		StopMultiStream();
+		return;
+	}
 	SaveProject();
 
 	if (outputHandler->StreamingActive()) {
@@ -174,6 +182,10 @@ void OBSBasic::StopStreaming()
 
 void OBSBasic::ForceStopStreaming()
 {
+	if (MultiStreamActive()) {
+		StopMultiStream(true);
+		return;
+	}
 	SaveProject();
 
 	if (outputHandler->StreamingActive()) {
@@ -486,6 +498,20 @@ void OBSBasic::OfferRtmpsFallback(const std::string &plainUrl, const std::string
 
 void OBSBasic::StreamActionTriggered()
 {
+	if (MultiStreamActive() || (MultiStreamEnabled() && !outputHandler->StreamingActive() && !streamingStarting)) {
+		const bool active = MultiStreamActive();
+		const bool confirm = config_get_bool(App()->GetUserConfig(), "BasicWindow",
+			active ? "WarnBeforeStoppingStream" : "WarnBeforeStartingStream");
+		if (confirm && isVisible() && OBSMessageBox::question(this,
+			QTStr(active ? "ConfirmStop.Title" : "ConfirmStart.Title"),
+			QTStr(active ? "ConfirmStop.Text" : "ConfirmStart.Text")) != QMessageBox::Yes)
+			return;
+		if (active)
+			StopMultiStream();
+		else
+			StartMultiStream();
+		return;
+	}
 	if (outputHandler->StreamingActive()) {
 		bool confirm = config_get_bool(App()->GetUserConfig(), "BasicWindow", "WarnBeforeStoppingStream");
 
@@ -572,7 +598,7 @@ bool OBSBasic::StreamingActive()
 	if (!outputHandler) {
 		return false;
 	}
-	return outputHandler->StreamingActive();
+	return MultiStreamActive() || outputHandler->StreamingActive();
 }
 
 /* File-local macros (BUILD.md): out of the next file in the unity group. */

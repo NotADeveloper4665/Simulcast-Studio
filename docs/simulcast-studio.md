@@ -108,3 +108,7 @@ The portrait preview and its layer list must appear immediately, without a resta
 Hide it through the menu, reopen it, close it with its dock close button, and
 reopen it again. Repeat in Studio Mode and after restoring a saved dock layout.
 Verify that existing portrait sources and their transforms are unchanged.
+
+## Unified stream settings and portrait editor
+
+Use Settings → Stream → Streaming destinations to add, edit or remove RTMP(S) targets. Enable multistream to use the ordinary Start/Stop Streaming button for all targets. Existing saved YouTube horizontal/vertical keys are imported into the new profile settings on first use; disabling multistream restores the single-service controls. Stream keys are stored in the local profile configuration and never shown in the destination list. This path still creates an independent encoder per destination. The Dual Stream dock is for portrait sources, not stream configuration. The portrait preview uses the standard transform dialog, context menu and arrow-key nudging (Shift for 10 pixels). Validate profile persistence, cancel/apply, stop during connect, both modes, portrait undo and independent horizontal transforms on real hardware.

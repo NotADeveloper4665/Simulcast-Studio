@@ -1910,8 +1910,8 @@ void OBSBasicPreview::mouseMoveEvent(QMouseEvent *event)
 			mousePos = pos;
 			OBSBasic *obsBasic = OBSBasic::Get();
 			float scale = obsBasic->GetDevicePixelRatio();
-			float x = static_cast<float>(qtPos.x()) - static_cast<float>(obsBasic->previewX) / scale;
-			float y = static_cast<float>(qtPos.y()) - static_cast<float>(obsBasic->previewY) / scale;
+			float x = static_cast<float>(qtPos.x()) - static_cast<float>(EditingGeometry().x) / scale;
+			float y = static_cast<float>(qtPos.y()) - static_cast<float>(EditingGeometry().y) / scale;
 			vec2_set(&startPos, x, y);
 			updateCursor = true;
 		}

@@ -3238,6 +3238,9 @@ void OBSBasicSettings::LoadSettings(bool changedOnly)
 	if (!changedOnly || stream1Changed) {
 		LoadStream1Settings();
 	}
+	if (!changedOnly || multiStreamChanged) {
+		LoadMultiStreamSettings();
+	}
 	if (!changedOnly || outputsChanged) {
 		LoadOutputSettings();
 	}
@@ -3996,6 +3999,9 @@ void OBSBasicSettings::SaveSettings()
 	}
 	if (stream1Changed) {
 		SaveStream1Settings();
+	}
+	if (multiStreamChanged) {
+		SaveMultiStreamSettings();
 	}
 	if (outputsChanged) {
 		SaveOutputSettings();

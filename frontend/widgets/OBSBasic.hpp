@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include <QJsonArray>
+#include <QJsonObject>
+
 #include <atomic>
 
 #include "ui_OBSBasic.h"
@@ -518,7 +521,15 @@ public:
 	void RefreshVerticalLayers();
 	void AddVerticalLayer();
 	void EditVerticalLayer();
-	void AddStreamDestination(QListWidget *list);
+	QJsonArray MultiStreamDestinations() const;
+	bool MultiStreamEnabled() const;
+	bool MultiStreamActive() const;
+	bool MultiStreamEditable();
+	void SaveMultiStreamSettings(bool enabled, const QJsonArray &destinations);
+	bool EditStreamDestination(QJsonObject &entry, QWidget *parent);
+	void StartMultiStream();
+	void StopMultiStream(bool force = false);
+	void NudgeVertical(int dx, int dy);
 	void StartStreamDestination(StreamDestination &destination);
 	void StartDualRecording(DualRecording &recording);
 	void StopDualRecordings();

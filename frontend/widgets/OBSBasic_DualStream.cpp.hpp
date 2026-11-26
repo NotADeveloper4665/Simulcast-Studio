@@ -16,6 +16,11 @@
 #include "frontend/build/frontend-widgets.pch.hpp"
 
 #include <QDateTime>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QKeySequence>
+#include <QAction>
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -175,6 +180,8 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 
 void OBSBasic::RefreshVerticalLayers()
 {
+	if (!verticalLayers)
+		return;
 	const QSignalBlocker block(verticalLayers);
 	verticalLayers->clear();
 	auto scene = GetVerticalScene(false);
@@ -217,80 +224,89 @@ void OBSBasic::AddVerticalLayer()
 
 void OBSBasic::EditVerticalLayer()
 {
-	auto *selected = verticalLayers->currentItem();
+	const auto *selected = verticalLayers->currentItem();
 	auto scene = GetVerticalScene(false);
-	if (!scene || !selected) {
+	if (!scene || !selected)
 		return;
-	}
-
-	const auto id = selected->data(Qt::UserRole).toLongLong();
-	auto *layer = obs_scene_find_sceneitem_by_id(scene, id);
-	if (!layer) {
+	auto *item = obs_scene_find_sceneitem_by_id(scene, selected->data(Qt::UserRole).toLongLong());
+	if (!item || obs_sceneitem_locked(item))
 		return;
-	}
-
-	obs_transform_info transform{};
-	obs_sceneitem_get_info2(layer, &transform);
-
-	QDialog dialog(this);
-	dialog.setWindowTitle(tr("Vertical Source Layout"));
-	auto *form = new QFormLayout(&dialog);
-	auto number = [&](const QString &label, float value, int minimum, int maximum) {
-		auto *field = new QSpinBox(&dialog);
-		field->setRange(minimum, maximum);
-		field->setValue(static_cast<int>(value));
-		form->addRow(label, field);
-		return field;
-	};
-	auto *x = number(tr("X"), transform.pos.x, -4096, 4096);
-	auto *y = number(tr("Y"), transform.pos.y, -4096, 4096);
-	auto *width = number(tr("Width"), transform.bounds.x, 1, 4096);
-	auto *height = number(tr("Height"), transform.bounds.y, 1, 4096);
-	auto *fill = new QCheckBox(tr("Fill and crop to the bounds"), &dialog);
-	fill->setChecked(transform.crop_to_bounds);
-	form->addRow(fill);
-	auto *visible = new QCheckBox(tr("Visible"), &dialog);
-	visible->setChecked(obs_sceneitem_visible(layer));
-	const QString sceneId = QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(scene)));
-	scene = nullptr;
-	form->addRow(visible);
-	form->addRow(DualStreamDialogButtons(dialog));
-
-	if (dialog.exec() != QDialog::Accepted) {
-		return;
-	}
-
-	auto current = GetVerticalScene(false);
-	if (current.Get() != scene.Get()) {
-		return;
-	}
-	layer = obs_scene_find_sceneitem_by_id(scene, id);
-	if (!layer) {
-		return;
-	}
-	vec2_set(&transform.pos, static_cast<float>(x->value()), static_cast<float>(y->value()));
-	vec2_set(&transform.bounds, static_cast<float>(width->value()), static_cast<float>(height->value()));
-	transform.bounds_type = fill->isChecked() ? OBS_BOUNDS_SCALE_OUTER : OBS_BOUNDS_SCALE_INNER;
-	transform.crop_to_bounds = fill->isChecked();
-	obs_sceneitem_set_info2(layer, &transform);
-	obs_sceneitem_set_visible(layer, visible->isChecked());
-	SaveProject();
+	if (transformWindow)
+		transformWindow->close();
+	transformWindow = new OBSBasicTransform(item, this, true);
+	transformWindow->setAttribute(Qt::WA_DeleteOnClose);
+	transformWindow->show();
 }
 
-void OBSBasic::AddStreamDestination(QListWidget *list)
+QJsonArray OBSBasic::MultiStreamDestinations() const
 {
-	QDialog dialog(this);
-	dialog.setWindowTitle(tr("Add Stream Destination"));
+	const char *saved = config_get_string(Config(), "Stream1", "SimulcastDestinations");
+	if (saved && *saved) {
+		const auto document = QJsonDocument::fromJson(QByteArray(saved));
+		if (document.isArray())
+			return document.array();
+	}
+	QJsonArray entries;
+	const char *configured = config_get_string(Config(), "Stream1", "DualStreamYoutubeServer");
+	const QString server = configured && *configured ? QString::fromUtf8(configured)
+		: QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2");
+	for (bool vertical : {false, true}) {
+		const char *key = config_get_string(Config(), "Stream1", vertical ? "DualStreamYoutubeVerticalKey" : "DualStreamYoutubeHorizontalKey");
+		if (key && *key)
+			entries.append(QJsonObject{{"name", vertical ? tr("YouTube Vertical") : tr("YouTube Horizontal")},
+				{"server", server}, {"key", QString::fromUtf8(key)}, {"vertical", vertical},
+				{"encoder", PreferredH264Encoder()}, {"bitrate", vertical ? 6000 : 4500}});
+	}
+	return entries;
+}
+
+bool OBSBasic::MultiStreamEnabled() const
+{
+	if (config_has_user_value(Config(), "Stream1", "SimulcastMultiStream"))
+		return config_get_bool(Config(), "Stream1", "SimulcastMultiStream");
+	return !MultiStreamDestinations().isEmpty();
+}
+
+bool OBSBasic::MultiStreamActive() const
+{
+	return std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
+		const auto state = destination->state.load();
+		return state == StreamDestination::Connecting || state == StreamDestination::Live ||
+		       state == StreamDestination::Stopping;
+	});
+}
+
+bool OBSBasic::MultiStreamEditable()
+{
+	return !MultiStreamActive() && !streamingStarting && (!outputHandler || !outputHandler->StreamingActive());
+}
+
+void OBSBasic::SaveMultiStreamSettings(bool enabled, const QJsonArray &destinations)
+{
+	if (!MultiStreamEditable())
+		return;
+	const auto json = QJsonDocument(destinations).toJson(QJsonDocument::Compact);
+	config_set_string(Config(), "Stream1", "SimulcastDestinations", json.constData());
+	config_set_bool(Config(), "Stream1", "SimulcastMultiStream", enabled);
+}
+
+bool OBSBasic::EditStreamDestination(QJsonObject &entry, QWidget *parent)
+{
+	QDialog dialog(parent);
+	dialog.setWindowTitle(entry.isEmpty() ? tr("Add Stream Destination") : tr("Edit Stream Destination"));
 	auto *form = new QFormLayout(&dialog);
 	auto *name = new QLineEdit(&dialog);
 	auto *server = new QLineEdit(&dialog);
-	server->setText(QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2"));
+	name->setText(entry.value("name").toString());
+	server->setText(entry.value("server").toString(QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2")));
 	server->setPlaceholderText(QStringLiteral("rtmps://host/app"));
 	server->setToolTip(tr("For YouTube, use this same ingest URL for both destinations and enter the separate stream key shown for each orientation."));
 	auto *key = new QLineEdit(&dialog);
 	key->setEchoMode(QLineEdit::Password);
+	key->setText(entry.value("key").toString());
 	auto *orientation = new QComboBox(&dialog);
 	orientation->addItems({tr("Horizontal program"), tr("Vertical program (9:16)")});
+	orientation->setCurrentIndex(entry.value("vertical").toBool() ? 1 : 0);
 	auto *encoders = new QComboBox(&dialog);
 	const char *id = nullptr;
 	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
@@ -302,13 +318,13 @@ void OBSBasic::AddStreamDestination(QListWidget *list)
 			encoders->addItem(label, QString::fromUtf8(id));
 		}
 	}
-	const int preferred = encoders->findData(PreferredH264Encoder());
+	const int preferred = encoders->findData(entry.value("encoder").toString(PreferredH264Encoder()));
 	if (preferred >= 0) {
 		encoders->setCurrentIndex(preferred);
 	}
 	auto *bitrate = new QSpinBox(&dialog);
 	bitrate->setRange(250, 50000);
-	bitrate->setValue(4500);
+	bitrate->setValue(entry.value("bitrate").toInt(4500));
 	bitrate->setSuffix(tr(" kbps"));
 
 	form->addRow(tr("Name"), name);
@@ -334,32 +350,60 @@ void OBSBasic::AddStreamDestination(QListWidget *list)
 		dialog.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	if (dialog.exec() != QDialog::Accepted) {
+	if (dialog.exec() != QDialog::Accepted)
+		return false;
+	const QString title = name->text().trimmed();
+	entry = QJsonObject{{"name", title.isEmpty() ? QUrl(server->text().trimmed()).host() : title},
+		{"server", server->text().trimmed()}, {"key", key->text().trimmed()},
+		{"vertical", orientation->currentIndex() == 1}, {"encoder", encoders->currentData().toString()},
+		{"bitrate", bitrate->value()}};
+	return true;
+}
+
+void OBSBasic::StartMultiStream()
+{
+	if (!MultiStreamEditable() || disableOutputsRef)
+		return;
+	const auto entries = MultiStreamDestinations();
+	if (entries.isEmpty()) {
+		QMessageBox::information(this, tr("Multi-Stream"), tr("Add at least one destination in Settings → Stream."));
 		return;
 	}
-
-	auto destination = std::make_unique<StreamDestination>();
-	destination->vertical = orientation->currentIndex() == 1;
-	destination->name = name->text().trimmed();
-	if (destination->name.isEmpty()) {
-		destination->name = QUrl(server->text().trimmed()).host();
+	// Dispose old inactive outputs and callbacks before replacing their owning objects.
+	StopExtraStreams();
+	streamDestinations.clear();
+	for (const auto &value : entries) {
+		const auto entry = value.toObject();
+		auto destination = std::make_unique<StreamDestination>();
+		destination->name = entry.value("name").toString();
+		destination->server = entry.value("server").toString();
+		destination->key = entry.value("key").toString();
+		destination->vertical = entry.value("vertical").toBool();
+		destination->encoder = entry.value("encoder").toString();
+		if (destination->encoder.isEmpty())
+			destination->encoder = PreferredH264Encoder();
+		destination->bitrate = entry.value("bitrate").toInt(4500);
+		streamDestinations.emplace_back(std::move(destination));
 	}
-	destination->server = server->text().trimmed();
-	destination->key = key->text().trimmed();
-	destination->encoder = encoders->currentData().toString();
-	destination->bitrate = bitrate->value();
-	for (const auto &existing : streamDestinations) {
-		if (existing->vertical != destination->vertical && existing->key == destination->key &&
-		    IsYouTubeServer(existing->server) && IsYouTubeServer(destination->server)) {
-			QMessageBox::warning(this, tr("Duplicate Stream Key"),
-					     tr("Horizontal and vertical destinations need separate keys. For YouTube, use its second key from the vertical Encoder stream settings."));
-			return;
+	for (const auto &destination : streamDestinations)
+		StartStreamDestination(*destination);
+	SaveProject();
+}
+
+void OBSBasic::StopMultiStream(bool force)
+{
+	for (const auto &destination : streamDestinations) {
+		auto state = destination->state.load();
+		if ((state == StreamDestination::Connecting || state == StreamDestination::Live) &&
+		    destination->state.compare_exchange_strong(state, StreamDestination::Stopping)) {
+			if (force)
+				obs_output_force_stop(destination->output);
+			else
+				obs_output_stop(destination->output);
+		} else if (force && state == StreamDestination::Stopping && destination->output) {
+			obs_output_force_stop(destination->output);
 		}
 	}
-	const QString title = destination->name;
-	streamDestinations.emplace_back(std::move(destination));
-	list->addItem(title);
-	list->setCurrentRow(list->count() - 1);
 }
 
 void OBSBasic::StartStreamDestination(StreamDestination &destination)
@@ -384,8 +428,8 @@ void OBSBasic::StartStreamDestination(StreamDestination &destination)
 				&hasLayer);
 		}
 		if (!hasLayer) {
-			QMessageBox::information(this, tr("Multi-Stream"),
-						 tr("Add a source to the vertical scene first."));
+			destination.state.store(StreamDestination::Failed);
+			blog(LOG_WARNING, "Simulcast: vertical destination needs a visible source");
 			return;
 		}
 
@@ -678,29 +722,7 @@ void OBSBasic::InitDualStreamDock()
 	auto *content = new QWidget(dock);
 	auto *layout = new QVBoxLayout(content);
 	auto *layerButtons = new QHBoxLayout();
-	auto *destinationButtons = new QHBoxLayout();
 	auto *layerOrderButtons = new QHBoxLayout();
-	auto *targets = new QListWidget(content);
-	const char *youtubeServerConfig = config_get_string(Config(), "Stream1", "DualStreamYoutubeServer");
-	const QString youtubeServer = youtubeServerConfig && *youtubeServerConfig
-					      ? QString::fromUtf8(youtubeServerConfig)
-					      : QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2");
-	auto addSavedYoutubeDestination = [this, targets, &youtubeServer](bool vertical, const char *configKey) {
-		const char *key = config_get_string(Config(), "Stream1", configKey);
-		if (!key || !*key)
-			return;
-		auto destination = std::make_unique<StreamDestination>();
-		destination->vertical = vertical;
-		destination->name = vertical ? tr("YouTube Vertical") : tr("YouTube Horizontal");
-		destination->server = youtubeServer;
-		destination->key = QString::fromUtf8(key);
-		destination->encoder = PreferredH264Encoder();
-		destination->bitrate = vertical ? 6000 : 4500;
-		targets->addItem(destination->name);
-		streamDestinations.emplace_back(std::move(destination));
-	};
-	addSavedYoutubeDestination(false, "DualStreamYoutubeHorizontalKey");
-	addSavedYoutubeDestination(true, "DualStreamYoutubeVerticalKey");
 	verticalLayers = new QListWidget(content);
 	verticalLayers->setObjectName(QStringLiteral("verticalSources"));
 	verticalLayers->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -730,21 +752,15 @@ void OBSBasic::InitDualStreamDock()
 	layout->addLayout(layerButtons);
 	layout->addLayout(layerOrderButtons);
 	auto *addLayer = addButton(layerButtons, tr("Add Source"));
-	auto *editLayer = addButton(layerButtons, tr("Layout"));
+	auto *editLayer = addButton(layerButtons, tr("Edit Transform"));
 	auto *properties = addButton(layerButtons, tr("Properties"));
 	auto *raiseLayer = addButton(layerOrderButtons, tr("Raise"));
 	auto *lowerLayer = addButton(layerOrderButtons, tr("Lower"));
 	auto *removeLayer = addButton(layerOrderButtons, tr("Remove Source"));
 
-	layout->addWidget(new QLabel(tr("Stream Destinations"), content));
-	layout->addWidget(targets);
-	layout->addLayout(destinationButtons);
-	auto *addTarget = addButton(destinationButtons, tr("Add"));
-	auto *removeTarget = addButton(destinationButtons, tr("Remove"));
-	auto *startTarget = addButton(destinationButtons, tr("Start"));
-	auto *stopTarget = addButton(destinationButtons, tr("Stop"));
-	auto *startAllTargets = addButton(destinationButtons, tr("Start All"));
-	auto *stopAllTargets = addButton(destinationButtons, tr("Stop All Streams"));
+	auto *streamHint = new QLabel(tr("Configure destinations in Settings → Stream. Use Start Streaming to go live."), content);
+	streamHint->setWordWrap(true);
+	layout->addWidget(streamHint);
 	horizontalRecording = std::make_unique<DualRecording>();
 	verticalRecording = std::make_unique<DualRecording>();
 	horizontalRecording->vertical = false;
@@ -817,7 +833,7 @@ void OBSBasic::InitDualStreamDock()
 					CreateFiltersWindow(obs_sceneitem_get_source(item));
 				});
 			});
-			menu.addAction(tr("Layout"), this, &OBSBasic::EditVerticalLayer);
+			menu.addAction(tr("Edit Transform"), this, &OBSBasic::EditVerticalLayer);
 			auto *visibility = menu.addAction(tr("Visible"));
 			visibility->setCheckable(true);
 			visibility->setChecked(obs_sceneitem_visible(item));
@@ -854,95 +870,8 @@ void OBSBasic::InitDualStreamDock()
 	};
 	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 
-	auto selectedDestination = [this, targets]() -> StreamDestination * {
-		const int row = targets->currentRow();
-		if (row < 0 || static_cast<size_t>(row) >= streamDestinations.size()) {
-			return nullptr;
-		}
-		return streamDestinations[static_cast<size_t>(row)].get();
-	};
-	auto canStart = [](StreamDestination *destination) {
-		if (!destination) {
-			return false;
-		}
-		const auto state = destination->state.load();
-		return state == StreamDestination::Idle || state == StreamDestination::Failed;
-	};
-	connect(addTarget, &QPushButton::clicked, this, [this, targets] { AddStreamDestination(targets); });
-	connect(removeTarget, &QPushButton::clicked, this, [this, targets, selectedDestination, canStart] {
-		if (!canStart(selectedDestination())) {
-			return;
-		}
-		const int row = targets->currentRow();
-		streamDestinations.erase(streamDestinations.begin() + row);
-		delete targets->takeItem(row);
-	});
-	connect(startTarget, &QPushButton::clicked, this, [this, selectedDestination, canStart] {
-		auto *destination = selectedDestination();
-		if (canStart(destination)) {
-			StartStreamDestination(*destination);
-		}
-	});
-	connect(stopTarget, &QPushButton::clicked, this, [selectedDestination] {
-		auto *destination = selectedDestination();
-		if (!destination) {
-			return;
-		}
-		auto state = destination->state.load();
-		if ((state == StreamDestination::Connecting || state == StreamDestination::Live) &&
-		    destination->state.compare_exchange_strong(state, StreamDestination::Stopping)) {
-			obs_output_force_stop(destination->output);
-		}
-	});
-	connect(startAllTargets, &QPushButton::clicked, this, [this, canStart] {
-		for (const auto &destination : streamDestinations) {
-			if (canStart(destination.get()))
-				StartStreamDestination(*destination);
-		}
-	});
-	connect(stopAllTargets, &QPushButton::clicked, this, [this] { StopExtraStreams(); });
-
-	auto updateDestinations = [this, targets, selectedDestination, canStart, startTarget, stopTarget,
-				   removeTarget] {
-		for (int row = 0; row < targets->count(); ++row) {
-			const auto &destination = *streamDestinations[static_cast<size_t>(row)];
-			QString status;
-			switch (destination.state.load()) {
-			case StreamDestination::Idle:
-				status = tr("Ready");
-				break;
-			case StreamDestination::Connecting:
-				status = tr("Connecting");
-				break;
-			case StreamDestination::Live:
-				status = obs_output_reconnecting(destination.output) ? tr("Reconnecting") : tr("Live");
-				break;
-			case StreamDestination::Stopping:
-				status = tr("Stopping");
-				break;
-			case StreamDestination::Failed:
-				status = tr("Failed. See the OBS log.");
-				break;
-			}
-			const QString title = tr("%1 · %2 · %3")
-						      .arg(destination.name,
-							   destination.vertical ? tr("Vertical") : tr("Horizontal"),
-							   status);
-			if (targets->item(row)->text() != title) {
-				targets->item(row)->setText(title);
-			}
-		}
-		auto *destination = selectedDestination();
-		startTarget->setEnabled(canStart(destination));
-		removeTarget->setEnabled(canStart(destination));
-		stopTarget->setEnabled(destination && !canStart(destination) &&
-				       destination->state.load() != StreamDestination::Stopping);
-	};
-
 	auto *timer = new QTimer(dock);
-	connect(timer, &QTimer::timeout, this, updateDestinations);
-	connect(timer, &QTimer::timeout, this, [this, recordingStatus,
-							  startAllTargets, stopAllTargets] {
+	connect(timer, &QTimer::timeout, this, [this, recordingStatus] {
 		auto stateName = [](DualRecording::State state) {
 			switch (state) {
 			case DualRecording::Recording: return QStringLiteral("Recording");
@@ -951,20 +880,32 @@ void OBSBasic::InitDualStreamDock()
 			default: return QStringLiteral("Ready");
 			}
 		};
-		const auto horizontal = horizontalRecording->state.load();
-		const auto vertical = verticalRecording->state.load();
 		recordingStatus->setText(tr("Horizontal: %1 · Vertical: %2 · MKV (H.264/AAC)")
-					 .arg(stateName(horizontal), stateName(vertical)));
-		startAllTargets->setEnabled(!streamDestinations.empty());
-		stopAllTargets->setEnabled(std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
-			const auto state = destination->state.load();
-			return state == StreamDestination::Connecting || state == StreamDestination::Live || state == StreamDestination::Stopping;
-		}));
+			.arg(stateName(horizontalRecording->state.load()), stateName(verticalRecording->state.load())));
 	});
-	connect(targets, &QListWidget::currentRowChanged, this, updateDestinations);
-	updateDestinations();
 	timer->start(250);
-
+	verticalPreview->setFocusPolicy(Qt::StrongFocus);
+	auto nudge = [this](int key, int dx, int dy) {
+		auto *action = new QAction(verticalPreview);
+		action->setShortcut(QKeySequence(key));
+		action->setShortcutContext(Qt::WidgetShortcut);
+		verticalPreview->addAction(action);
+		connect(action, &QAction::triggered, this, [this, dx, dy] { NudgeVertical(dx, dy); });
+	};
+	nudge(Qt::Key_Left, -1, 0);
+	nudge(Qt::Key_Right, 1, 0);
+	nudge(Qt::Key_Up, 0, -1);
+	nudge(Qt::Key_Down, 0, 1);
+	nudge(Qt::SHIFT | Qt::Key_Left, -10, 0);
+	nudge(Qt::SHIFT | Qt::Key_Right, 10, 0);
+	nudge(Qt::SHIFT | Qt::Key_Up, 0, -10);
+	nudge(Qt::SHIFT | Qt::Key_Down, 0, 10);
+	verticalPreview->setContextMenuPolicy(Qt::CustomContextMenu);
+	connect(verticalPreview, &QWidget::customContextMenuRequested, this, [this](const QPoint &) {
+		RefreshVerticalLayers();
+		if (auto *item = verticalLayers->currentItem())
+			emit verticalLayers->customContextMenuRequested(verticalLayers->visualItemRect(item).center());
+	});
 	dock->setWidget(content);
 	AddDockWidget(dock, Qt::RightDockWidgetArea);
 	// Register after AddDockWidget: setupDockAction disconnects existing triggered slots.

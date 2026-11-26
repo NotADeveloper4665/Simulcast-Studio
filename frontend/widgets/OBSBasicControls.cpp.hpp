@@ -31,6 +31,41 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 	connect(dualRecordTimer, &QTimer::timeout, this, refreshDualRecording);
 	dualRecordTimer->start(250);
 
+	// In multistream mode the standard Controls button represents the aggregate session.
+	auto *streamStatusTimer = new QTimer(this);
+	connect(streamStatusTimer, &QTimer::timeout, this, [this, main, wasMulti = false]() mutable {
+		const bool multi = main->MultiStreamEnabled() || main->MultiStreamActive();
+		if (!multi) {
+			if (wasMulti)
+				StreamingStopped(false);
+			wasMulti = false;
+			return;
+		}
+		wasMulti = true;
+		int live = 0, connecting = 0, stopping = 0, failed = 0;
+		for (const auto &destination : main->streamDestinations) {
+			switch (destination->state.load()) {
+			case OBSBasic::StreamDestination::Live: ++live; break;
+			case OBSBasic::StreamDestination::Connecting: ++connecting; break;
+			case OBSBasic::StreamDestination::Stopping: ++stopping; break;
+			case OBSBasic::StreamDestination::Failed: ++failed; break;
+			default: break;
+			}
+		}
+		const bool active = live || connecting || stopping;
+		const QString label = active ? tr("Stop Streaming (%1 live, %2 connecting)").arg(live).arg(connecting)
+			: tr("Start Streaming");
+		if (ui->streamButton->text() != label) {
+			ui->streamButton->setText(label);
+			setClasses(ui->streamButton, active ? "state-active" : "");
+		}
+		ui->streamButton->setToolTip(tr("Multi-stream: %1 live, %2 connecting, %3 stopping, %4 failed")
+			.arg(live).arg(connecting).arg(stopping).arg(failed));
+		ui->streamButton->setMenu(nullptr);
+		ui->streamButton->setEnabled(!stopping || live || connecting);
+	});
+	streamStatusTimer->start(250);
+
 	streamButtonMenu.reset(new QMenu());
 	startStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StartStreaming"));
 	stopStreamAction = streamButtonMenu->addAction(QTStr("Basic.Main.StopStreaming"));

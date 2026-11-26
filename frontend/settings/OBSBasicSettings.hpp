@@ -18,6 +18,9 @@
 
 #pragma once
 
+#include <QListWidget>
+#include <QCheckBox>
+
 #include "ui_OBSBasicSettings.h"
 
 #include <utility/FFmpegShared.hpp>
@@ -62,6 +65,12 @@ private:
 	bool generalChanged = false;
 	bool stream1Changed = false;
 	bool outputsChanged = false;
+	bool multiStreamChanged = false;
+	QListWidget *multiStreamList = nullptr;
+	QCheckBox *multiStreamMode = nullptr;
+	QGroupBox *multiStreamGroup = nullptr;
+	void LoadMultiStreamSettings();
+	void SaveMultiStreamSettings();
 	bool dualFoldersChanged = false;
 	QLineEdit *dualHorizontalPath = nullptr;
 	QLineEdit *dualVerticalPath = nullptr;
@@ -150,7 +159,7 @@ private:
 
 	inline bool Changed() const
 	{
-		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged || stream1Changed || audioChanged ||
+		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged || multiStreamChanged || stream1Changed || audioChanged ||
 		       videoChanged || advancedChanged || hotkeysChanged || a11yChanged;
 	}
 
@@ -160,6 +169,7 @@ private:
 	{
 		generalChanged = false;
 		stream1Changed = false;
+		multiStreamChanged = false;
 		outputsChanged = false;
 		dualFoldersChanged = false;
 		audioChanged = false;

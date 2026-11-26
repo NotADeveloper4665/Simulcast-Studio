@@ -22,6 +22,8 @@ private:
 
 	OBSBasic *main;
 	OBSSceneItem item;
+	OBSScene portraitScene;
+	bool portrait = false;
 	std::vector<OBSSignal> sigs;
 
 	std::string undo_data;
@@ -55,7 +57,7 @@ private slots:
 	void setEnabled(bool enable);
 
 public:
-	OBSBasicTransform(OBSSceneItem item, OBSBasic *parent);
+	OBSBasicTransform(OBSSceneItem item, OBSBasic *parent, bool portrait = false);
 	~OBSBasicTransform();
 
 public slots:

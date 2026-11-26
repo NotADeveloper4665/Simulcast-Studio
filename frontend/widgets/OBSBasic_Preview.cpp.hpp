@@ -327,6 +327,32 @@ static bool nudge_callback(obs_scene_t *, obs_sceneitem_t *item, void *param)
 	return true;
 }
 
+void OBSBasic::NudgeVertical(int dx, int dy)
+{
+	if (!verticalPreview || verticalPreview->Locked())
+		return;
+	auto scene = GetVerticalScene(false);
+	if (!scene)
+		return;
+	OBSDataAutoRelease before = obs_scene_save_transform_states(scene, true);
+	vec2 offset;
+	vec2_set(&offset, static_cast<float>(dx), static_cast<float>(dy));
+	obs_scene_enum_items(scene, nudge_callback, &offset);
+	OBSDataAutoRelease after = obs_scene_save_transform_states(scene, true);
+	if (!before || !after)
+		return;
+	const std::string oldState(obs_data_get_json(before)), newState(obs_data_get_json(after));
+	if (oldState == newState)
+		return;
+	auto apply = [](const std::string &json) {
+		obs_scene_load_transform_states(json.c_str());
+		OBSBasic::Get()->SaveProject();
+	};
+	undo_s.add_action(QTStr("Undo.Transform").arg(obs_source_get_name(obs_scene_get_source(scene))),
+		apply, apply, oldState, newState);
+	SaveProject();
+}
+
 void OBSBasic::Nudge(int dist, MoveDir dir)
 {
 	if (ui->preview->Locked()) {
