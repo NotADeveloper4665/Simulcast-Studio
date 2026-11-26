@@ -510,6 +510,10 @@ public:
 	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
 	std::unique_ptr<DualRecording> horizontalRecording;
 	std::unique_ptr<DualRecording> verticalRecording;
+	QListWidget *verticalScenes = nullptr;
+	QStringList verticalSceneOrder;
+	QString verticalSceneUuid;
+	QString verticalLayersFingerprint;
 	QListWidget *verticalLayers = nullptr;
 	QWidget *verticalPreviewPanel = nullptr;
 	OBSBasicPreview *verticalPreview = nullptr;
@@ -518,6 +522,8 @@ public:
 	obs_canvas_t *GetVerticalCanvas() const;
 	void InitVerticalCanvasVideo();
 	OBSScene GetVerticalScene(bool create);
+	void RefreshVerticalScenes();
+	void SelectVerticalScene(const QString &uuid);
 	void RefreshVerticalLayers();
 	void AddVerticalLayer();
 	void EditVerticalLayer();

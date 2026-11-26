@@ -776,8 +776,8 @@ void OBSBasic::ActivateSceneCollection(SceneCollection &collection)
 
 	OnEvent(OBS_FRONTEND_EVENT_SCENE_COLLECTION_LIST_CHANGED);
 	UpdateVerticalPreview();
-	if (verticalLayers)
-		RefreshVerticalLayers();
+	RefreshVerticalScenes();
+	RefreshVerticalLayers();
 	OnEvent(OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED);
 }
 
@@ -877,6 +877,14 @@ void OBSBasic::Save(SceneCollection &collection)
 	// UI scene order
 	OBSDataArrayAutoRelease sceneOrder = SaveSceneListOrder();
 	obs_data_set_array(saveData, "scene_order", sceneOrder);
+	OBSDataArrayAutoRelease portraitOrder = obs_data_array_create();
+	for (const auto &uuid : verticalSceneOrder) {
+		OBSDataAutoRelease entry = obs_data_create();
+		obs_data_set_string(entry, "uuid", uuid.toUtf8().constData());
+		obs_data_array_push_back(portraitOrder, entry);
+	}
+	obs_data_set_array(saveData, "simulcast_vertical_scene_order", portraitOrder);
+	obs_data_set_string(saveData, "simulcast_vertical_scene", verticalSceneUuid.toUtf8().constData());
 
 	// Current preview/program scenes
 	OBSScene scene = GetCurrentScene();
@@ -1165,6 +1173,14 @@ void OBSBasic::Load(SceneCollection &collection)
 void OBSBasic::LoadData(obs_data_t *collectionData, SceneCollection &collection)
 {
 	ClearSceneData();
+	verticalSceneOrder.clear();
+	verticalSceneUuid = QString::fromUtf8(obs_data_get_string(collectionData, "simulcast_vertical_scene"));
+	verticalLayersFingerprint.clear();
+	OBSDataArrayAutoRelease portraitOrder = obs_data_get_array(collectionData, "simulcast_vertical_scene_order");
+	for (size_t i = 0; portraitOrder && i < obs_data_array_count(portraitOrder); ++i) {
+		OBSDataAutoRelease entry = obs_data_array_item(portraitOrder, i);
+		verticalSceneOrder.append(QString::fromUtf8(obs_data_get_string(entry, "uuid")));
+	}
 	ClearContextBar();
 
 	/* Exit OBS if clearing scene data failed for some reason. */
