@@ -19,6 +19,7 @@ jobs:
           dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3
           dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
           dnf -y builddep obs-studio
+          dnf -y install onnxruntime onnxruntime-devel clang-devel
           dnf -y install x264-devel obs-studio-devel binutils xorg-x11-server-Xvfb xorg-x11-xauth nss nspr atk at-spi2-atk at-spi2-core cups-libs libXcomposite libXdamage libXrandr libXcursor libXi libXtst libxkbcommon libdrm mesa-libgbm alsa-lib gtk3
       - uses: actions/checkout@v4
         with:
@@ -49,14 +50,35 @@ jobs:
           rustup component add rustfmt clippy
           rustc --version
           cargo --version
-          cmake --preset fedora -DENABLE_BROWSER=ON -DCEF_ROOT_DIR="$CEF_ROOT_DIR" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
+          cmake --preset fedora -DENABLE_SIMULCAST_BACKGROUND_REMOVAL=ON -DENABLE_BROWSER=ON -DCEF_ROOT_DIR="$CEF_ROOT_DIR" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
           cmake --build build_fedora --parallel 4
+      - name: Build and test native Rust background removal
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/simulcast-cargo/bin:$PATH"
+          export CARGO_HOME=/opt/simulcast-cargo RUSTUP_HOME=/opt/simulcast-rustup
+          export OBS_INCLUDE_DIR="$PWD/libobs" OBS_CONFIG_DIR="$PWD/build_fedora/config"
+          libobs=$(find "$PWD/build_fedora" -name libobs.so -print -quit)
+          test -f "$libobs"
+          export OBS_LIB_DIR="$(dirname "$libobs")"
+          export LD_LIBRARY_PATH="$OBS_LIB_DIR"
+          runtime=$(rpm -ql onnxruntime | awk '/\/libonnxruntime[.]so[.][0-9]+([.][0-9]+)*$/ && !found {print; found=1}')
+          test -f "$runtime"
+          export SIMULCAST_ORT_PATH="$runtime"
+          export SIMULCAST_MODEL_PATH=/tmp/mediapipe-landscape.onnx
+          curl --fail --location --retry 3 --proto '=https' -o "$SIMULCAST_MODEL_PATH" https://huggingface.co/onnx-community/mediapipe_selfie_segmentation_landscape/resolve/2497d5bec26c626c7b3c4edc6e1fefc21b64f6c3/onnx/model.onnx
+          echo "7a0adcfdb1715d3b0ff0f61486d8a181c33f4a208343a5abfccbc6540e872d24  $SIMULCAST_MODEL_PATH" | sha256sum -c -
+          cd plugins/rust-background-removal
+          export RUSTFLAGS='-C link-arg=-Wl,-rpath,$ORIGIN/../..'
+          cargo test --lib
+          cargo build --release
       - name: Package and validate Fedora RPM
         shell: bash
         run: |
           set -euo pipefail
           rpm_release=$((GITHUB_RUN_NUMBER + 5))
-          cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0 -D CPACK_RPM_PACKAGE_RELEASE="$rpm_release"
+          cpack --config build_fedora/CPackConfig.cmake -G RPM -B build_fedora/rpm -D CPACK_PACKAGE_VERSION=0.1.0 -D CPACK_RPM_PACKAGE_RELEASE="$rpm_release" -D "CPACK_RPM_PACKAGE_REQUIRES=onnxruntime >= 1.22"
           mkdir -p dist
           cp build_fedora/rpm/simulcast-studio-*.fc44.x86_64.rpm dist/
           rpm_file=$(find dist -maxdepth 1 -name '*.rpm')
@@ -68,6 +90,9 @@ jobs:
           ldd /usr/bin/simulcast-studio | tee /tmp/simulcast-ldd
           if grep -q 'not found' /tmp/simulcast-ldd; then exit 1; fi
           QT_QPA_PLATFORM=offscreen simulcast-studio --version
+          test -f /usr/lib64/obs-studio-rust/obs-modules/plugins/simulcast-background-removal.so
+          ldd /usr/lib64/obs-studio-rust/obs-modules/plugins/simulcast-background-removal.so | tee dist/background-removal-ldd.txt
+          if grep -q 'not found' dist/background-removal-ldd.txt; then exit 1; fi
           core=/usr/lib64/obs-studio-rust/obs-modules/core
           for file in obs-browser.so obs-browser-page libcef.so icudtl.dat resources.pak v8_context_snapshot.bin chrome-sandbox; do
             test -f "$core/$file"

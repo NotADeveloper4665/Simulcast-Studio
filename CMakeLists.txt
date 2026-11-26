@@ -76,4 +76,14 @@ if(OBS_BUILD_NATIVE_TIER2)
   include("${CMAKE_CURRENT_SOURCE_DIR}/rust/tools/tier2-validate/targets.cmake")
 endif()
 
+# Optional prebuilt Rust filter from the exact same libobs build in CI.
+option(ENABLE_SIMULCAST_BACKGROUND_REMOVAL "Package the native Rust background-removal filter" OFF)
+if(OS_LINUX AND ENABLE_SIMULCAST_BACKGROUND_REMOVAL)
+  set(_bgrem_dir "${CMAKE_SOURCE_DIR}/plugins/rust-background-removal")
+  install(FILES "${_bgrem_dir}/target/release/libsimulcast_background_removal.so"
+    DESTINATION "${OBS_PLUGIN_DESTINATION}/plugins" RENAME simulcast-background-removal.so COMPONENT Runtime)
+  install(FILES "${_bgrem_dir}/NOTICE" "${_bgrem_dir}/Apache-2.0.txt" "${_bgrem_dir}/README.md"
+    DESTINATION "${OBS_DATA_DESTINATION}/obs-modules/plugins/simulcast-background-removal" COMPONENT Runtime)
+endif()
+
 message_configuration()
