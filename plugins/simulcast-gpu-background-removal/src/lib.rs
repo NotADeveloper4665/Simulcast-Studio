@@ -6,6 +6,7 @@ mod ffi { include!(concat!(env!("OUT_DIR"), "/obs.rs")); }
 mod graph;
 mod weights;
 mod pipeline;
+mod cadence;
 use ffi::*;
 use std::{cell::UnsafeCell, ffi::{c_void,c_char}, ptr, sync::atomic::{AtomicPtr,AtomicU32,AtomicBool,Ordering::Relaxed}};
 static MODULE: AtomicPtr<obs_module_t> = AtomicPtr::new(ptr::null_mut());
@@ -16,6 +17,8 @@ struct Filter {
     w: AtomicU32, h: AtomicU32,
     blur: AtomicBool, strength: AtomicU32, focus: AtomicU32,
     dirty: AtomicBool,
+    mask_fps: AtomicU32,
+    invalidate_mask: AtomicBool,
 }
 fn boundary<T>(fallback:T, f:impl FnOnce()->T)->T {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(fallback)
@@ -30,9 +33,15 @@ unsafe extern "C" fn defaults(s:*mut obs_data_t){
     obs_data_set_default_bool(s,c"blur".as_ptr(),false);
     obs_data_set_default_double(s,c"strength".as_ptr(),4.0);
     obs_data_set_default_double(s,c"focus".as_ptr(),-100.0);
+    obs_data_set_default_int(s,c"mask_fps".as_ptr(),30);
 }
 unsafe extern "C" fn properties(_: *mut c_void)->*mut obs_properties_t{
     let p=obs_properties_create();
+    let fps=obs_properties_add_list(p,c"mask_fps".as_ptr(),c"Segmentation update rate".as_ptr(),OBS_COMBO_TYPE_LIST,OBS_COMBO_FORMAT_INT);
+    for (label,rate) in [(c"Every frame (maximum quality)",0),(c"30 FPS (balanced)",30),(c"20 FPS (low GPU load)",20),(c"15 FPS (lowest GPU load)",15)] {
+        obs_property_list_add_int(fps,label.as_ptr(),rate);
+    }
+    obs_property_set_long_description(fps,c"Limits only mask inference; camera video still renders every frame. Lower rates reduce GPU load but can cause edge lag during fast motion.".as_ptr());
     obs_properties_add_bool(p,c"blur".as_ptr(),c"Blur background instead of removing it".as_ptr());
     obs_properties_add_float_slider(p,c"strength".as_ptr(),c"Blur strength".as_ptr(),0.,20.,0.1);
     obs_properties_add_float_slider(p,c"focus".as_ptr(),c"Blur focus ratio (%)".as_ptr(),-100.,100.,1.);
@@ -42,6 +51,8 @@ unsafe extern "C" fn update(data:*mut c_void,s:*mut obs_data_t){
     if data.is_null()||s.is_null(){return;}
     let f=&*data.cast::<Filter>();
     f.blur.store(obs_data_get_bool(s,c"blur".as_ptr()),Relaxed);
+    let rate=obs_data_get_int(s,c"mask_fps".as_ptr());
+    f.mask_fps.store(match rate {0|15|20|30 => rate as u32,_=>30},Relaxed);
     let v=obs_data_get_double(s,c"strength".as_ptr());
     f.strength.store((if v.is_finite(){v.clamp(0.,20.) as f32}else{4.}).to_bits(),Relaxed);
     let v=obs_data_get_double(s,c"focus".as_ptr());
@@ -50,7 +61,7 @@ unsafe extern "C" fn update(data:*mut c_void,s:*mut obs_data_t){
 unsafe extern "C" fn create(s:*mut obs_data_t,source:*mut obs_source_t)->*mut c_void{
     boundary(ptr::null_mut(),||{
         if source.is_null(){return ptr::null_mut();}
-        let p=Box::into_raw(Box::new(Filter{source,pipeline:UnsafeCell::new(None),attempted:UnsafeCell::new((0,0)),w:AtomicU32::new(0),h:AtomicU32::new(0),blur:AtomicBool::new(false),strength:AtomicU32::new(4f32.to_bits()),focus:AtomicU32::new(0),dirty:AtomicBool::new(true)})).cast();
+        let p=Box::into_raw(Box::new(Filter{source,pipeline:UnsafeCell::new(None),attempted:UnsafeCell::new((0,0)),w:AtomicU32::new(0),h:AtomicU32::new(0),blur:AtomicBool::new(false),strength:AtomicU32::new(4f32.to_bits()),focus:AtomicU32::new(0),dirty:AtomicBool::new(true),mask_fps:AtomicU32::new(30),invalidate_mask:AtomicBool::new(true)})).cast();
         update(p,s);p
     })
 }
@@ -66,7 +77,7 @@ unsafe extern "C" fn tick(data:*mut c_void,_:f32){
         let f=&*data.cast::<Filter>();
         let target=obs_filter_get_target(f.source);
         let parent=obs_filter_get_parent(f.source);
-        if target.is_null()||parent.is_null()||!obs_source_showing(parent){return;}
+        if target.is_null()||parent.is_null()||!obs_source_showing(parent){f.invalidate_mask.store(true,Relaxed);return;}
         let size=(obs_source_get_base_width(target),obs_source_get_base_height(target));
         f.dirty.store(true,Relaxed);
         if *f.attempted.get()==size{return;}
@@ -97,8 +108,9 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t){
             let strength=f32::from_bits(f.strength.load(Relaxed));
             let focus=f32::from_bits(f.focus.load(Relaxed));
             if f.dirty.swap(false,Relaxed){
-                if let Err(e)=p.prepare(f.source,target,blur,strength,focus){
-                    eprintln!("Simulcast background removal: {e}");p.ready=false;return;
+                if f.invalidate_mask.swap(false,Relaxed){p.invalidate_mask();}
+                if let Err(e)=p.prepare(f.source,target,blur,strength,focus,f.mask_fps.load(Relaxed)){
+                    eprintln!("Simulcast background removal: {e}");p.invalidate_mask();p.ready=false;return;
                 }
             }
             if p.ready {p.draw();}

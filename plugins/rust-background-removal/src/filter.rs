@@ -6,6 +6,7 @@ use std::{cell::UnsafeCell, ffi::{c_void, c_char, CStr}, ptr, sync::{Arc, Mutex,
 struct Settings { model: String, threshold: f32, feather: f32, revision: u64 }
 struct Filter {
     source: *mut obs_source_t,
+    dirty: AtomicBool,
     width: AtomicU32,
     height: AtomicU32,
     settings: Mutex<Settings>,
@@ -29,6 +30,7 @@ struct Render {
     revision: u64,
     generation: u64,
     last_mask: Option<Instant>,
+    frame_valid: bool,
 }
 impl Render {
     unsafe fn new() -> Self {
@@ -39,7 +41,7 @@ impl Render {
             stages: [gs_stagesurface_create(W as u32,H as u32,GS_RGBA),gs_stagesurface_create(W as u32,H as u32,GS_RGBA)],
             staged: [None,None], write: 0,
             mask: gs_texture_create(W as u32,H as u32,GS_R8,1,ptr::null_mut(),GS_DYNAMIC),
-            effect, dimensions:(0,0), revision:0, generation:0, last_mask:None,
+            effect, dimensions:(0,0), revision:0, generation:0, last_mask:None, frame_valid:false,
         }
     }
     fn valid(&self) -> bool {
@@ -89,7 +91,7 @@ unsafe extern "C" fn create(s: *mut obs_data_t, source: *mut obs_source_t) -> *m
     
     obs_leave_graphics();
     // Retain the filter even if graphics initialization fails; draw nothing.
-    Box::into_raw(Box::new(Filter { source, width:AtomicU32::new(0),height:AtomicU32::new(0), settings:Mutex::new(read_settings(s,0)),render:UnsafeCell::new(render),tx,evict,result,stop,worker:Some(worker) })).cast()
+    Box::into_raw(Box::new(Filter { source, dirty:AtomicBool::new(true), width:AtomicU32::new(0),height:AtomicU32::new(0), settings:Mutex::new(read_settings(s,0)),render:UnsafeCell::new(render),tx,evict,result,stop,worker:Some(worker) })).cast()
 }
 unsafe extern "C" fn update(data: *mut c_void,s: *mut obs_data_t) {
     if data.is_null() { return; }
@@ -136,10 +138,15 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
     if w==0 || h==0 { return; }
     if r.dimensions!=(w,h) || r.revision!=settings.revision {
         r.dimensions=(w,h);r.revision=settings.revision;r.generation=r.generation.wrapping_add(1);
-        r.staged=[None,None];r.last_mask=None;
+        r.staged=[None,None];r.last_mask=None;r.frame_valid=false;
+        f.dirty.store(true,Ordering::Relaxed);
         let _=f.evict.try_recv();
     }
 
+    // OBS can render one source for preview, program and multiple canvases
+    // during a single video tick. Reuse the capture and staged mask work.
+    if f.dirty.swap(false,Ordering::Relaxed) {
+    r.frame_valid=false;
     gs_texrender_reset(r.capture);
     gs_blend_state_push();
     gs_blend_function(GS_BLEND_ONE,GS_BLEND_ZERO);
@@ -156,6 +163,7 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
     gs_blend_state_pop();
     let tex=gs_texrender_get_texture(r.capture);
     if tex.is_null() { return; }
+    r.frame_valid=true;
 
     // Read the previous staging surface, not the texture just submitted.
     let previous=1-r.write;
@@ -200,6 +208,10 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
             }
         }
     }
+    }
+    if !r.frame_valid { return; }
+    let tex=gs_texrender_get_texture(r.capture);
+    if tex.is_null() { return; }
     let ready=r.last_mask.is_some_and(|t|t.elapsed()<Duration::from_millis(350));
     if !ready { return; }
     let e=r.effect;
@@ -216,6 +228,7 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
 unsafe extern "C" fn tick(data:*mut c_void,_:f32) {
     if data.is_null() { return; }
     let f=&*data.cast::<Filter>();
+    f.dirty.store(true,Ordering::Relaxed);
     let target=obs_filter_get_target(f.source);
     let (w,h)=if target.is_null() {(0,0)} else {(obs_source_get_base_width(target),obs_source_get_base_height(target))};
     f.width.store(w,Ordering::Relaxed);

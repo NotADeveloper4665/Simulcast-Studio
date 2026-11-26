@@ -52,6 +52,14 @@ jobs:
           cargo --version
           cmake --preset fedora -DENABLE_SIMULCAST_BACKGROUND_REMOVAL=ON -DENABLE_SIMULCAST_GPU_BACKGROUND_REMOVAL=ON -DENABLE_BROWSER=ON -DCEF_ROOT_DIR="$CEF_ROOT_DIR" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
           cmake --build build_fedora --parallel 4
+      - name: Test GPU segmentation cadence
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/simulcast-cargo/bin:$PATH"
+          export CARGO_HOME=/opt/simulcast-cargo RUSTUP_HOME=/opt/simulcast-rustup
+          rustc --edition=2021 --test plugins/simulcast-gpu-background-removal/src/cadence.rs -o /tmp/segmentation-cadence-tests
+          /tmp/segmentation-cadence-tests
       - name: Build and test native Rust background removal
         shell: bash
         run: |

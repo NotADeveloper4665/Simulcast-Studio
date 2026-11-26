@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Kaito Udagawa <umireon@kaito.tokyo>
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Adapted from royshil/obs-backgroundremoval at d177d33197099dbeb5ccd430923de39fb941ea19
-use crate::{ffi::*,graph::PASSES,weights::LAYERS};
-use std::{ffi::CString,ptr};
+use crate::{ffi::*,graph::PASSES,weights::LAYERS,cadence::Cadence};
+use std::{cell::RefCell,collections::HashMap,ffi::CString,ptr,time::{Duration,Instant}};
 type Result<T>=std::result::Result<T,String>;
 type Tex=*mut gs_texture_t;
 struct Texture(Tex);
@@ -19,7 +19,7 @@ impl Texture {
     }
 }
 impl Drop for Texture{fn drop(&mut self){unsafe{gs_texture_destroy(self.0)}}}
-struct Effect(*mut gs_effect_t);
+struct Effect(*mut gs_effect_t, RefCell<HashMap<&'static str,*mut gs_eparam_t>>, RefCell<HashMap<&'static str,CString>>);
 impl Effect{
     unsafe fn new(code:&str,name:&str)->Result<Self>{
         let code=CString::new(code).map_err(|_|"invalid shader")?;
@@ -27,13 +27,18 @@ impl Effect{
         let mut error=ptr::null_mut();
         let e=gs_effect_create(code.as_ptr(),name.as_ptr(),&mut error);
         let msg=if error.is_null(){String::new()}else{let m=std::ffi::CStr::from_ptr(error).to_string_lossy().into_owned();bfree(error.cast());m};
-        if e.is_null(){Err(format!("shader compilation: {msg}"))}else{Ok(Self(e))}
+        if e.is_null(){Err(format!("shader compilation: {msg}"))}else{Ok(Self(e,RefCell::new(HashMap::new()),RefCell::new(HashMap::new())))}
     }
-    unsafe fn param(&self,name:&str)->*mut gs_eparam_t{let n=CString::new(name).unwrap();gs_effect_get_param_by_name(self.0,n.as_ptr())}
-    unsafe fn texture(&self,name:&str,t:Tex){let p=self.param(name);if !p.is_null(){gs_effect_set_texture(p,t)}}
-    unsafe fn srgb(&self,name:&str,t:Tex){let p=self.param(name);if !p.is_null(){gs_effect_set_texture_srgb(p,t)}}
-    unsafe fn float(&self,name:&str,v:f32){let p=self.param(name);if !p.is_null(){gs_effect_set_float(p,v)}}
-    unsafe fn int(&self,name:&str,v:i32){let p=self.param(name);if !p.is_null(){gs_effect_set_int(p,v)}}
+    unsafe fn param(&self,name:&'static str)->*mut gs_eparam_t{
+        *self.1.borrow_mut().entry(name).or_insert_with(|| {
+            let n=CString::new(name).unwrap();
+            gs_effect_get_param_by_name(self.0,n.as_ptr())
+        })
+    }
+    unsafe fn texture(&self,name:&'static str,t:Tex){let p=self.param(name);if !p.is_null(){gs_effect_set_texture(p,t)}}
+    unsafe fn srgb(&self,name:&'static str,t:Tex){let p=self.param(name);if !p.is_null(){gs_effect_set_texture_srgb(p,t)}}
+    unsafe fn float(&self,name:&'static str,v:f32){let p=self.param(name);if !p.is_null(){gs_effect_set_float(p,v)}}
+    unsafe fn int(&self,name:&'static str,v:i32){let p=self.param(name);if !p.is_null(){gs_effect_set_int(p,v)}}
     unsafe fn half_pixel(&self,w:u32,h:u32){
         let raw=[0.5/w as f32,0.5/h as f32];
         let mut v:vec2=std::mem::zeroed();
@@ -41,8 +46,9 @@ impl Effect{
         let p=self.param("halfPixel");
         if !p.is_null(){gs_effect_set_vec2(p,&v);}
     }
-    unsafe fn pass(&self,name:&str,w:u32,h:u32,mut set:impl FnMut(&Self)){
-        let n=CString::new(name).unwrap();
+    unsafe fn pass(&self,name:&'static str,w:u32,h:u32,mut set:impl FnMut(&Self)){
+        let mut names=self.2.borrow_mut();
+        let n=names.entry(name).or_insert_with(||CString::new(name).unwrap());
         while gs_effect_loop(self.0,n.as_ptr()){set(self);gs_draw_sprite(ptr::null_mut(),0,w,h);}
     }
     unsafe fn require(&self,name:&str)->Result<()>{
@@ -72,6 +78,7 @@ pub struct Pipeline {
     tensors:Vec<Texture>,weights:Vec<(Texture,Texture)>,mask:Texture,
     levels:Vec<Level>,blur_level:Option<usize>,blur_up:bool,
     blur:bool,strength:f32,focus:f32,
+    cadence:Cadence,mask_at:Option<Instant>,
 }
 impl Pipeline{
     pub unsafe fn new(w:u32,h:u32)->Result<Self>{
@@ -88,9 +95,10 @@ impl Pipeline{
         }
         let mut weights=Vec::new();
         for l in LAYERS{weights.push((Texture::weights(l.width,l.height,l.weights)?,Texture::weights(l.bias_width,1,l.bias)?));}
-        Ok(Self{w,h,ready:false,net,comp,source,tensors,weights,mask:Texture::target(256,144,GS_R8)?,levels:Vec::new(),blur_level:None,blur_up:false,blur:false,strength:4.,focus:0.})
+        Ok(Self{w,h,ready:false,net,comp,source,tensors,weights,mask:Texture::target(256,144,GS_R8)?,levels:Vec::new(),blur_level:None,blur_up:false,blur:false,strength:4.,focus:0.,cadence:Cadence::default(),mask_at:None})
     }
-    pub unsafe fn prepare(&mut self,filter:*mut obs_source_t,src:*mut obs_source_t,blur:bool,strength:f32,focus:f32)->Result<()>{
+    pub fn invalidate_mask(&mut self){self.mask_at=None;self.cadence.reset();self.ready=false;}
+    pub unsafe fn prepare(&mut self,filter:*mut obs_source_t,src:*mut obs_source_t,blur:bool,strength:f32,focus:f32,mask_fps:u32)->Result<()>{
         self.ready=false;self.blur=blur;self.strength=strength;self.focus=focus;self.blur_level=None;self.blur_up=false;
         let _guard=Guard::new();gs_matrix_identity();
         target(self.source.0,self.w,self.h);
@@ -99,6 +107,10 @@ impl Pipeline{
         let parent=obs_filter_get_parent(filter);
         if src==parent&&(obs_source_get_output_flags(src)&(OBS_SOURCE_CUSTOM_DRAW|OBS_SOURCE_ASYNC))==0{obs_source_default_render(src);}else{obs_source_video_render(src);}
         gs_enable_blending(false);
+        // The camera texture is always current, even if inference is rate-limited.
+        let now=Instant::now();
+        let due=self.cadence.due(now,mask_fps);
+        if due || self.mask_at.is_none_or(|t|now.saturating_duration_since(t)>=Duration::from_millis(125)) {
         target(self.tensors[0].0,256,144);
         self.net.pass("Draw",256,144,|e|e.texture("image",self.source.0));
         for (i,p) in PASSES.iter().enumerate(){
@@ -116,6 +128,8 @@ impl Pipeline{
         self.comp.pass("RefineMask",256,144,|e|{
             e.texture("probability",self.tensors.last().unwrap().0);e.float("threshold",0.5);e.int("maskWidth",256);e.int("maskHeight",144);
         });
+        self.mask_at=Some(now);
+        }
         if blur&&strength>0.{
             let variance=strength*(2.*strength*strength+1.)/6.;
             let mut count=0usize;
