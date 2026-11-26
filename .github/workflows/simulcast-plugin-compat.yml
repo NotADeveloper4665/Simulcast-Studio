@@ -128,6 +128,7 @@ jobs:
           LD_LIBRARY_PATH="$candidate" ldd /tmp/stock-probe/load-filter | tee dist/plugin-probe-ldd.txt
           grep -F "$candidate/libobs.so.30" dist/plugin-probe-ldd.txt
           xvfb-run -a env LD_LIBRARY_PATH="$candidate" /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data | tee dist/plugin-probe-result.txt
+          xvfb-run -a env LD_LIBRARY_PATH="$candidate" /tmp/stock-probe/load-filter "$candidate/obs-modules/plugins/simulcast-background-removal.so" /usr/share/obs-studio-rust/obs-modules/plugins/simulcast-background-removal simulcast_onnx_background_removal "AI Background Removal (Simulcast)" | tee dist/background-removal-registration.txt
           python3 ci/plugin-compat/compare-symbols.py /usr/lib64/libobs.so.30 "$candidate/libobs.so.30" | tee dist/libobs-symbol-report.txt
           python3 ci/plugin-compat/compare-symbols.py /usr/lib64/libobs-frontend-api.so.30 "$candidate/libobs-frontend-api.so.30" | tee dist/frontend-symbol-report.txt
       - uses: actions/upload-artifact@v4

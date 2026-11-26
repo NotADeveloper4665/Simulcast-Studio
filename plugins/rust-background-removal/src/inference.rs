@@ -74,7 +74,7 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| infer(s,&job.rgb))) {
                 Ok(Ok(alpha)) => { if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha,generation:job.generation,captured:job.captured}); } }
                 _ => {
-                    if let Ok(mut slot)=result.lock() { *slot=None; }
+                    if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha:Vec::new(),generation:job.generation,captured:job.captured}); }
                     eprintln!("Simulcast background inference failed");
                     session = if gpu { gpu=false; std::panic::catch_unwind(||load(&job.model,false)).ok().and_then(Result::ok) } else { None };
                 }

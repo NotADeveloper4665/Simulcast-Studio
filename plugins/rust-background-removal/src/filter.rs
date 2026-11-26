@@ -192,13 +192,15 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
 
     if let Ok(mut slot)=f.result.try_lock() {
         if let Some(m)=slot.take() {
-            if m.generation==r.generation && m.captured.elapsed()<Duration::from_millis(350) && m.alpha.len()==W*H {
-                gs_texture_set_image(r.mask,m.alpha.as_ptr(),W as u32,false);
-                r.last_mask=Some(m.captured);
+            if m.generation==r.generation {
+                if m.captured.elapsed()<Duration::from_millis(350) && m.alpha.len()==W*H {
+                    gs_texture_set_image(r.mask,m.alpha.as_ptr(),W as u32,false);
+                    r.last_mask=Some(m.captured);
+                } else { r.last_mask=None; }
             }
         }
     }
-    let ready=r.last_mask.is_some_and(|t|t.elapsed()<Duration::from_secs(1));
+    let ready=r.last_mask.is_some_and(|t|t.elapsed()<Duration::from_millis(350));
     if !ready { return; }
     let e=r.effect;
     gs_effect_set_texture(gs_effect_get_param_by_name(e,c"image".as_ptr()),tex);
