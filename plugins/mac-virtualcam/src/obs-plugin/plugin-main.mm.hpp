@@ -433,6 +433,8 @@ static bool virtualcam_output_start(void *data)
 	dal_plugin_status dal_status = check_dal_plugin();
 
 	if (cmio_extension_supported()) {
+		// A branded fork must not uninstall the original OBS legacy DAL plugin.
+#if !defined(SIMULCAST_BRANDED_CAMERA)
 		if (dal_status != OBSDalPluginNotInstalled) {
 			if (!uninstall_dal_plugin()) {
 				obs_output_set_last_error(vcam->output, obs_module_text("Error.DAL.NotUninstalled"));
@@ -440,6 +442,7 @@ static bool virtualcam_output_start(void *data)
 			}
 		}
 
+#endif
 		SystemExtensionActivationDelegate *delegate = vcam->extensionDelegate;
 
 		if (!delegate.installed) {
@@ -530,10 +533,13 @@ static bool virtualcam_output_start(void *data)
 		CMIOObjectGetPropertyData(kCMIOObjectSystemObject, &address, 0, NULL, size, &used, device_data);
 
 		vcam->deviceID = 0;
-		NSString *OBSVirtualCamUUIDString = [[NSBundle bundleWithIdentifier:@"com.obsproject.mac-virtualcam"]
-			objectForInfoDictionaryKey:@"OBSCameraDeviceUUID"];
+		NSString *OBSVirtualCamUUIDString = @OBS_CAMERA_DEVICE_UUID;
 		CFUUIDRef OBSVirtualCamUUID =
 			CFUUIDCreateFromString(kCFAllocatorDefault, (CFStringRef)OBSVirtualCamUUIDString);
+		if (!OBSVirtualCamUUID) {
+			obs_output_set_last_error(vcam->output, "Invalid virtual camera device UUID");
+			return false;
+		}
 
 		size_t num_elements = size / sizeof(CMIOObjectID);
 		for (size_t i = 0; i < num_elements; i++) {
@@ -544,9 +550,11 @@ static bool virtualcam_output_start(void *data)
 			address.mSelector = kCMIODevicePropertyDeviceUID;
 			UInt32 device_name_size;
 			CMIOObjectGetPropertyDataSize(cmioDevice, &address, 0, NULL, &device_name_size);
-			CFStringRef uid;
-			CMIOObjectGetPropertyData(cmioDevice, &address, 0, NULL, device_name_size, &used, &uid);
+			CFStringRef uid = nullptr;
+			if (CMIOObjectGetPropertyData(cmioDevice, &address, 0, NULL, device_name_size, &used, &uid) != noErr || !uid)
+				continue;
 			CFUUIDRef deviceUUID = CFUUIDCreateFromString(kCFAllocatorDefault, uid);
+			if (!deviceUUID) { CFRelease(uid); continue; }
 
 			if (CFEqual(OBSVirtualCamUUID, deviceUUID)) {
 				vcam->deviceID = cmioDevice;

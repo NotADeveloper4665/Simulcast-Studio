@@ -1,0 +1,141 @@
+name: Simulcast macOS browser and virtual camera
+on:
+  push:
+    branches: [feature/macos-browser-virtualcam]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: simulcast-macos-dev-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    if: github.repository == 'NotADeveloper4665/Simulcast-Studio' && (github.ref == 'refs/heads/feature/macos-browser-virtualcam' || github.ref == 'refs/heads/master')
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Import optional Apple Developer ID
+        id: signing
+        uses: ./.github/actions/setup-macos-codesigning
+        with:
+          codesignIdentity: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          codesignCertificate: ${{ secrets.MACOS_SIGNING_CERT }}
+          certificatePassword: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+          keychainPassword: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          notarizationUser: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
+          notarizationPassword: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+      - name: Check virtual camera signing prerequisites
+        id: profiles
+        if: steps.signing.outputs.haveCodesignIdent == 'true' && steps.signing.outputs.haveNotarizationUser == 'true'
+        env:
+          SIGNING_TEAM: ${{ steps.signing.outputs.codesignTeam }}
+          HOST_PROFILE: ${{ secrets.MACOS_SIGNING_PROVISIONING_PROFILE }}
+          CAMERA_PROFILE: ${{ secrets.MACOS_CAMERA_PROVISIONING_PROFILE }}
+        run: python3 ci/simulcast_macos_profiles.py
+      - name: Build Browser Source and optional Core Media I/O camera
+        shell: bash
+        env:
+          SIGN_ID: ${{ steps.signing.outputs.codesignIdent || '-' }}
+          SIGN_TEAM: ${{ steps.signing.outputs.codesignTeam }}
+          CAMERA_ENABLED: ${{ steps.profiles.outputs.enabled || 'false' }}
+          HOST_PROFILE_UUID: ${{ steps.profiles.outputs.host }}
+          CAMERA_PROFILE_UUID: ${{ steps.profiles.outputs.camera }}
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal
+          rustup component add --toolchain 1.98.1 rustfmt clippy
+          # CMake's pinned macOS dependency manifest fetches and verifies CEF 8078 arm64.
+          camera=OFF
+          profile_args=()
+          if [[ "$CAMERA_ENABLED" == true ]]; then
+            camera=ON
+            profile_args+=("-DOBS_PROVISIONING_PROFILE=$HOST_PROFILE_UUID" "-DOBS_CAMERA_PROVISIONING_PROFILE=$CAMERA_PROFILE_UUID")
+          fi
+          cmake --preset macos -DCMAKE_OSX_ARCHITECTURES=arm64 -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0 -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DENABLE_BROWSER=ON "-DENABLE_VIRTUALCAM=$camera" -DSPARKLE_APPCAST_URL= -DSPARKLE_PUBLIC_KEY= "-DOBS_CODESIGN_IDENTITY=$SIGN_ID" "-DOBS_CODESIGN_TEAM=$SIGN_TEAM" -DVIRTUALCAM_DEVICE_UUID=584FC79B-2B9C-459B-93B9-6229667EA589 -DVIRTUALCAM_SOURCE_UUID=3DF2E2A5-0B81-4916-9B0B-1D16E406D731 -DVIRTUALCAM_SINK_UUID=C46015C4-C329-4995-94A7-1253A4CFA5C2 "${profile_args[@]}"
+          cmake --build build_macos --config RelWithDebInfo --target obs-studio --parallel 4
+      - name: Validate browser, camera and app bundle
+        shell: bash
+        env:
+          CAMERA_ENABLED: ${{ steps.profiles.outputs.enabled || 'false' }}
+          SIGN_TEAM: ${{ steps.signing.outputs.codesignTeam }}
+        run: |
+          set -euo pipefail
+          app="build_macos/frontend/RelWithDebInfo/Simulcast Studio.app"
+          exe="$app/Contents/MacOS/Simulcast Studio"
+          test -x "$exe"
+          file "$exe" | grep arm64
+          browser=$(find "$app/Contents" -type d -name obs-browser.plugin -print -quit)
+          test -n "$browser"
+          test -d "$app/Contents/Frameworks/Chromium Embedded Framework.framework"
+          for suffix in '' ' (GPU)' ' (Plugin)' ' (Renderer)'; do
+            test -d "$app/Contents/Frameworks/Simulcast Studio Helper$suffix.app"
+          done
+          codesign --verify --deep --strict "$app"
+          "$exe" --version
+          if [[ "$CAMERA_ENABLED" == true ]]; then
+            ext="$app/Contents/Library/SystemExtensions/io.github.notadeveloper4665.SimulcastStudio.mac-camera-extension.systemextension"
+            test -d "$ext"
+            test -n "$(find "$app/Contents" -type d -name mac-virtualcam.plugin -print -quit)"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :OBSCameraDeviceUUID' "$ext/Contents/Info.plist")" = 584FC79B-2B9C-459B-93B9-6229667EA589
+            codesign --verify --strict "$ext"
+            for bundle in "$app" "$ext"; do
+              codesign -dv --verbose=4 "$bundle" 2>&1 | grep -Fx "TeamIdentifier=$SIGN_TEAM"
+            done
+          fi
+          mkdir -p dist
+          printf 'Source: %s\nBrowser Source: included\nVirtual camera extension: %s\n' "$GITHUB_SHA" "$CAMERA_ENABLED" > dist/BUILD-INFO.txt
+      - name: Create Apple Silicon DMG
+        shell: bash
+        env:
+          SIGN_ID: ${{ steps.signing.outputs.codesignIdent || '-' }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/simulcast-macos-dmg
+          ditto "build_macos/frontend/RelWithDebInfo/Simulcast Studio.app" "/tmp/simulcast-macos-dmg/Simulcast Studio.app"
+          ln -s /Applications /tmp/simulcast-macos-dmg/Applications
+          hdiutil create -volname 'Simulcast Studio' -srcfolder /tmp/simulcast-macos-dmg -format UDZO -ov dist/Simulcast-Studio-macOS-arm64-dev.dmg
+          if [[ "$SIGN_ID" != - ]]; then
+            codesign --force --timestamp --sign "$SIGN_ID" dist/Simulcast-Studio-macOS-arm64-dev.dmg
+          fi
+          hdiutil verify dist/Simulcast-Studio-macOS-arm64-dev.dmg
+      - name: Apple notarization and stapling
+        if: steps.signing.outputs.haveCodesignIdent == 'true' && steps.signing.outputs.haveNotarizationUser == 'true'
+        shell: bash
+        env:
+          NOTARY_USER: ${{ secrets.MACOS_NOTARIZATION_USERNAME }}
+          NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+          SIGN_TEAM: ${{ steps.signing.outputs.codesignTeam }}
+        run: |
+          set -euo pipefail
+          dmg=dist/Simulcast-Studio-macOS-arm64-dev.dmg
+          xcrun notarytool submit "$dmg" --apple-id "$NOTARY_USER" --password "$NOTARY_PASSWORD" --team-id "$SIGN_TEAM" --wait --output-format json > "$RUNNER_TEMP/notary.json"
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print("Notary status:",r["status"]); sys.exit(r["status"]!="Accepted")' "$RUNNER_TEMP/notary.json"
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          echo 'Notarization: accepted and stapled' >> dist/BUILD-INFO.txt
+      - name: Record signing status and checksum
+        shell: bash
+        env:
+          SIGNED: ${{ steps.signing.outputs.haveCodesignIdent }}
+          NOTARY: ${{ steps.signing.outputs.haveNotarizationUser }}
+        run: |
+          set -euo pipefail
+          if [[ "$SIGNED" != true ]]; then
+            echo 'Signing: ad hoc; not notarized' >> dist/BUILD-INFO.txt
+          elif [[ "$NOTARY" != true ]]; then
+            echo 'Signing: Developer ID; not notarized' >> dist/BUILD-INFO.txt
+          else
+            echo 'Signing: Developer ID' >> dist/BUILD-INFO.txt
+          fi
+          (cd dist && shasum -a 256 *.dmg > SHA256SUMS)
+          cat dist/BUILD-INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulcast-macos-arm64-dev
+          path: dist/
+          if-no-files-found: error

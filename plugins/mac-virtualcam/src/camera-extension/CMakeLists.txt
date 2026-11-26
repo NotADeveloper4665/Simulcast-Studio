@@ -46,6 +46,13 @@ set_target_properties_obs(
              XCODE_PRODUCT_TYPE com.apple.product-type.system-extension
 )
 
+# A separate profile is required for a separately identified CMIO extension.
+set(OBS_CAMERA_PROVISIONING_PROFILE "" CACHE STRING "Camera extension provisioning profile UUID")
+if(OBS_CAMERA_PROVISIONING_PROFILE)
+  set_target_xcode_properties(mac-camera-extension PROPERTIES
+    PROVISIONING_PROFILE_SPECIFIER "${OBS_CAMERA_PROVISIONING_PROFILE}")
+endif()
+
 string(TIMESTAMP CURRENT_YEAR "%Y")
 configure_file(cmake/macos/entitlements.plist entitlements.plist @ONLY)
 

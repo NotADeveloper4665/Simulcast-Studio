@@ -7,6 +7,8 @@
         <key>CMIOExtensionMachServiceName</key>
         <string>$(TeamIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     </dict>
+    <key>SimulcastCameraName</key>
+    <string>${OBS_APP_DISPLAY_NAME} Virtual Camera</string>
     <key>OBSCameraDeviceUUID</key>
     <string>${VIRTUALCAM_DEVICE_UUID}</string>
     <key>OBSCameraSourceUUID</key>

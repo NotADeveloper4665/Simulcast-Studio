@@ -21,4 +21,7 @@ set_target_properties_obs(
              XCODE_ATTRIBUTE_CLANG_MODULES_AUTOLINK YES
 )
 
-target_compile_definitions(mac-virtualcam PRIVATE OBS_CAMERA_EXTENSION_ID="${OBS_CAMERA_EXTENSION_ID}")
+target_compile_definitions(mac-virtualcam PRIVATE OBS_CAMERA_EXTENSION_ID="${OBS_CAMERA_EXTENSION_ID}" OBS_CAMERA_DEVICE_UUID="${VIRTUALCAM_DEVICE_UUID}")
+if(OBS_BRAND_RUST)
+  target_compile_definitions(mac-virtualcam PRIVATE SIMULCAST_BRANDED_CAMERA=1)
+endif()
