@@ -7,29 +7,22 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 	/* Create UI elements */
 	ui->setupUi(this);
 
-	// Keep dual recording separate from the normal profile recording.
-	auto *dualRecordButton = new QPushButton(tr("Record Both"), ui->controlsFrame);
-	dualRecordButton->setObjectName(QStringLiteral("dualRecordButton"));
-	dualRecordButton->setToolTip(tr("Record the horizontal and vertical canvases to separate files."));
-	ui->buttonsVLayout->insertWidget(ui->buttonsVLayout->indexOf(ui->recordingLayout) + 1, dualRecordButton);
-	dualRecordButton->setEnabled(false);
-	auto refreshDualRecording = [main, dualRecordButton] {
-		const bool ready = main->horizontalRecording && main->verticalRecording;
-		const bool active = ready && main->DualRecordingsActive();
-		const QString label = active ? tr("Stop Both") : tr("Record Both");
-		if (dualRecordButton->text() != label) {
-			dualRecordButton->setText(label);
-			setClasses(dualRecordButton, active ? "state-active" : "");
+	// One recording control, including the portrait companion. Keep the OBS
+	// button's existing signal and profile recording lifecycle intact.
+	ui->recordButton->setToolTip(tr("Record horizontally, and vertically if enabled in Settings → Video."));
+	auto *recordingStatusTimer = new QTimer(this);
+	connect(recordingStatusTimer, &QTimer::timeout, this, [this, main, draining = false]() mutable {
+		const bool waiting = !main->RecordingActive() && main->DualRecordingsActive();
+		if (waiting) {
+			ui->recordButton->setText(QTStr("Basic.Main.StoppingRecording"));
+			setClasses(ui->recordButton, "state-active");
+		} else if (draining && !main->RecordingActive()) {
+			ui->recordButton->setText(QTStr("Basic.Main.StartRecording"));
+			setClasses(ui->recordButton, "");
 		}
-		dualRecordButton->setEnabled(ready);
-	};
-	connect(dualRecordButton, &QPushButton::clicked, this, [main, refreshDualRecording] {
-		main->ToggleDualRecordings();
-		refreshDualRecording();
+		draining = waiting;
 	});
-	auto *dualRecordTimer = new QTimer(this);
-	connect(dualRecordTimer, &QTimer::timeout, this, refreshDualRecording);
-	dualRecordTimer->start(250);
+	recordingStatusTimer->start(250);
 
 	// In multistream mode the standard Controls button represents the aggregate session.
 	auto *streamStatusTimer = new QTimer(this);

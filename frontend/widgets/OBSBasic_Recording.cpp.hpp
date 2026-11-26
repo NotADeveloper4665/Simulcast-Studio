@@ -104,7 +104,7 @@ void OBSBasic::AutoRemux(QString input, bool no_show)
 
 void OBSBasic::StartRecording()
 {
-	if (outputHandler->RecordingActive()) {
+	if (!outputHandler || outputHandler->RecordingActive() || DualRecordingsActive()) {
 		return;
 	}
 	if (disableOutputsRef) {
@@ -144,6 +144,7 @@ void OBSBasic::RecordStopping()
 void OBSBasic::StopRecording()
 {
 	SaveProject();
+	StopVerticalRecording(recordingStopping);
 
 	if (outputHandler->RecordingActive()) {
 		outputHandler->StopRecording(recordingStopping);
@@ -155,6 +156,10 @@ void OBSBasic::StopRecording()
 void OBSBasic::RecordingStart()
 {
 	ui->statusbar->RecordingStarted(outputHandler->fileOutput);
+	// Pause cannot be synchronized reliably across the two independent encoders yet.
+	UpdateIsRecordingPausable();
+	if (VerticalRecordingEnabled())
+		isRecordingPausable = false;
 	emit RecordingStarted(isRecordingPausable);
 
 	if (sysTrayRecord) {
@@ -170,12 +175,18 @@ void OBSBasic::RecordingStart()
 	}
 
 	OnActivate();
-
+	if (VerticalRecordingEnabled() && verticalRecording) {
+		verticalStopRequested = false;
+		StartDualRecording(*verticalRecording);
+		if (!DualRecordingsActive())
+			blog(LOG_WARNING, "Simulcast: vertical companion did not start; horizontal recording continues");
+	}
 	blog(LOG_INFO, RECORDING_START);
 }
 
 void OBSBasic::RecordingStop(int code, QString last_error)
 {
+	StopVerticalRecording();
 	ui->statusbar->RecordingStopped();
 	emit RecordingStopped();
 
@@ -271,6 +282,8 @@ void OBSBasic::RecordActionTriggered()
 		}
 		StopRecording();
 	} else {
+		if (DualRecordingsActive())
+			return; // The portrait file is still finalizing.
 		if (!UIValidation::NoSourcesConfirmation(this)) {
 			return;
 		}
@@ -379,7 +392,7 @@ void OBSBasic::UpdateIsRecordingPausable()
 		shared = strcmp(quality, "Stream") == 0;
 	}
 
-	isRecordingPausable = !shared;
+	isRecordingPausable = !shared && !VerticalRecordingEnabled() && !DualRecordingsActive();
 }
 
 void OBSBasic::DiskSpaceMessage()

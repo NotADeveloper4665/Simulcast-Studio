@@ -376,7 +376,7 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 
 	ui->setupUi(this);
 
-	auto *dualFolders = new QGroupBox(tr("Dual Video Recording"), ui->outputPage);
+	auto *dualFolders = new QGroupBox(tr("Vertical Video Recording"), ui->outputPage);
 	auto *dualFolderLayout = new QFormLayout(dualFolders);
 	auto makeDualFolder = [this, dualFolders, dualFolderLayout](const QString &label, bool vertical) {
 		auto *row = new QWidget(dualFolders);
@@ -402,9 +402,17 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 		});
 		return field;
 	};
-	dualHorizontalPath = makeDualFolder(tr("Horizontal folder"), false);
-	dualVerticalPath = makeDualFolder(tr("Vertical folder"), true);
+	dualVerticalPath = makeDualFolder(tr("Vertical recording folder"), true);
 	ui->verticalLayout_6->insertWidget(ui->verticalLayout_6->indexOf(ui->outputModePages), dualFolders);
+
+	auto *verticalGroup = new QGroupBox(tr("Vertical Video Recording"), ui->videoPage);
+	auto *verticalLayout = new QVBoxLayout(verticalGroup);
+	verticalRecordingEnabled = new QCheckBox(tr("Enable vertical video recording"), verticalGroup);
+	verticalLayout->addWidget(verticalRecordingEnabled);
+	auto *verticalHint = new QLabel(tr("Start Recording always records the horizontal program. Enable this option to also record the vertical program to a separate MKV file. Set its folder in Output. Pause is unavailable while recording both."), verticalGroup);
+	verticalHint->setWordWrap(true);
+	verticalLayout->addWidget(verticalHint);
+	ui->verticalLayout->insertWidget(1, verticalGroup);
 
 	auto *cleanGroup = new QGroupBox(tr("Clean Source Recording"), ui->videoPage);
 	auto *cleanLayout = new QFormLayout(cleanGroup);
@@ -423,13 +431,14 @@ OBSBasicSettings::OBSBasicSettings(QWidget *parent)
 	auto *cleanHint = new QLabel(tr("Records source video without scene overlays. Audio uses the normal mix (track 1). An additional encoder is required."), cleanGroup);
 	cleanHint->setWordWrap(true);
 	cleanLayout->addRow(cleanHint);
-	ui->verticalLayout->insertWidget(1, cleanGroup);
+	ui->verticalLayout->insertWidget(2, cleanGroup);
 	auto cleanDirty = [this] {
 		if (!loading) {
 			cleanSourceChanged = true;
 			EnableApplyButton(true);
 		}
 	};
+	connect(verticalRecordingEnabled, &QCheckBox::toggled, this, cleanDirty);
 	connect(cleanSourceEnabled, &QCheckBox::toggled, this, cleanDirty);
 	connect(cleanSourcePicker, qOverload<int>(&QComboBox::currentIndexChanged), this, cleanDirty);
 	connect(cleanSourceDirectory, &QLineEdit::textChanged, this, cleanDirty);
@@ -1807,6 +1816,8 @@ void OBSBasicSettings::LoadFPSData()
 
 void OBSBasicSettings::LoadCleanSourceSettings()
 {
+	const QSignalBlocker verticalBlock(verticalRecordingEnabled);
+	verticalRecordingEnabled->setChecked(main->VerticalRecordingEnabled());
 	const QSignalBlocker enabledBlock(cleanSourceEnabled);
 	const QSignalBlocker pickerBlock(cleanSourcePicker);
 	const QSignalBlocker directoryBlock(cleanSourceDirectory);
@@ -3305,9 +3316,7 @@ void OBSBasicSettings::LoadSettings(bool changedOnly)
 		LoadOutputSettings();
 	}
 	if (!changedOnly || dualFoldersChanged) {
-		const QSignalBlocker horizontalBlock(dualHorizontalPath);
 		const QSignalBlocker verticalBlock(dualVerticalPath);
-		dualHorizontalPath->setText(main->DualRecordingFolder(false));
 		dualVerticalPath->setText(main->DualRecordingFolder(true));
 	}
 	if (!changedOnly || audioChanged) {
@@ -4070,12 +4079,13 @@ void OBSBasicSettings::SaveSettings()
 		SaveOutputSettings();
 	}
 	if (dualFoldersChanged) {
-		main->SaveDualRecordingFolders(dualHorizontalPath->text().trimmed(), dualVerticalPath->text().trimmed());
+		main->SaveVerticalRecordingFolder(dualVerticalPath->text().trimmed());
 	}
 	if (audioChanged) {
 		SaveAudioSettings();
 	}
 	if (cleanSourceChanged) {
+		config_set_bool(main->Config(), "Video", "RecordVertical", verticalRecordingEnabled->isChecked());
 		const auto uuid = cleanSourcePicker->currentData().toString().toUtf8();
 		config_set_bool(main->Config(), "Video", "RecordCleanSource", cleanSourceEnabled->isChecked() && !uuid.isEmpty());
 		config_set_string(main->Config(), "Video", "CleanSourceUuid", uuid.constData());

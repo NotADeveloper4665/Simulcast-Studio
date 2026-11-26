@@ -72,12 +72,12 @@ private:
 	void LoadMultiStreamSettings();
 	void SaveMultiStreamSettings();
 	bool cleanSourceChanged = false;
+	QCheckBox *verticalRecordingEnabled = nullptr;
 	QCheckBox *cleanSourceEnabled = nullptr;
 	QComboBox *cleanSourcePicker = nullptr;
 	QLineEdit *cleanSourceDirectory = nullptr;
 	void LoadCleanSourceSettings();
 	bool dualFoldersChanged = false;
-	QLineEdit *dualHorizontalPath = nullptr;
 	QLineEdit *dualVerticalPath = nullptr;
 	bool audioChanged = false;
 	bool videoChanged = false;

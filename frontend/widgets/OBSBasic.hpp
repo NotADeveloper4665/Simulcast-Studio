@@ -509,8 +509,8 @@ public:
 	};
 
 	std::vector<std::unique_ptr<StreamDestination>> streamDestinations;
-	std::unique_ptr<DualRecording> horizontalRecording;
 	std::unique_ptr<DualRecording> verticalRecording;
+	bool verticalStopRequested = false;
 	std::unique_ptr<DualRecording> cleanSourceRecording;
 	OBSCanvasAutoRelease cleanSourceCanvas;
 	bool cleanSourceSession = false;
@@ -562,10 +562,11 @@ public:
 	void StartStreamDestination(StreamDestination &destination);
 	void StartDualRecording(DualRecording &recording);
 	void StopDualRecordings();
-	void ToggleDualRecordings();
+	void StopVerticalRecording(bool force = false);
+	bool VerticalRecordingEnabled() const;
 	bool DualRecordingsActive() const;
 	QString DualRecordingFolder(bool vertical) const;
-	void SaveDualRecordingFolders(const QString &horizontal, const QString &vertical);
+	void SaveVerticalRecordingFolder(const QString &vertical);
 	bool ExtraStreamsActive() const;
 	void StopExtraStreams();
 

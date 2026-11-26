@@ -989,6 +989,10 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 			break;
 	}
 
+	// Release any finished output only after disconnecting its signal handles.
+	recording.started.Disconnect();
+	recording.stopped.Disconnect();
+	recording.output = nullptr;
 	OBSDataAutoRelease outputSettings = obs_data_create();
 	obs_data_set_string(outputSettings, "path", path.toUtf8().constData());
 	recording.output = obs_output_create("ffmpeg_muxer", recording.vertical ? "Simulcast Vertical Recording"
@@ -1040,34 +1044,43 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 	recording.state.store(DualRecording::Stopping);
 	if (!obs_output_start(recording.output)) {
 		recording.state.store(DualRecording::Failed);
+		recording.started.Disconnect();
+		recording.stopped.Disconnect();
 		recording.output = nullptr;
 		QMessageBox::warning(this, tr("Dual Recording"), tr("Could not start recording to:\n%1").arg(path));
 	}
 }
 
+void OBSBasic::StopVerticalRecording(bool force)
+{
+	if (!verticalRecording || !verticalRecording->output)
+		return;
+	auto &recording = *verticalRecording;
+	const auto state = recording.state.load();
+	if (state != DualRecording::Recording && state != DualRecording::Stopping)
+		return;
+	if (verticalStopRequested && !force)
+		return;
+	verticalStopRequested = true;
+	recording.state.store(DualRecording::Stopping);
+	if (force)
+		obs_output_force_stop(recording.output);
+	else
+		obs_output_stop(recording.output);
+}
+
 void OBSBasic::StopDualRecordings()
 {
-	bool stopping = false;
-	for (DualRecording *recording : {horizontalRecording.get(), verticalRecording.get()}) {
-		if (!recording || !recording->output)
-			continue;
-		if (recording->state.load() == DualRecording::Recording || recording->state.load() == DualRecording::Stopping) {
-			recording->state.store(DualRecording::Stopping);
-			obs_output_force_stop(recording->output);
-			stopping = true;
-		}
-	}
-	if (stopping)
-		obs_wait_for_destroy_queue();
-	for (DualRecording *recording : {horizontalRecording.get(), verticalRecording.get()}) {
-		if (!recording)
-			continue;
-		recording->started.Disconnect();
-		recording->stopped.Disconnect();
-		recording->output = nullptr;
-		if (recording->state.load() == DualRecording::Stopping)
-			recording->state.store(DualRecording::Idle);
-	}
+	if (!verticalRecording)
+		return;
+	StopVerticalRecording(true);
+	auto &recording = *verticalRecording;
+	recording.started.Disconnect();
+	recording.stopped.Disconnect();
+	recording.output = nullptr;
+	obs_wait_for_destroy_queue();
+	recording.state.store(DualRecording::Idle);
+	verticalStopRequested = false;
 }
 
 QString OBSBasic::DualRecordingFolder(bool vertical) const
@@ -1084,30 +1097,19 @@ QString OBSBasic::DualRecordingFolder(bool vertical) const
 
 bool OBSBasic::DualRecordingsActive() const
 {
-	const auto active = [](const std::unique_ptr<DualRecording> &recording) {
-		if (!recording)
-			return false;
-		const auto state = recording->state.load();
-		return state == DualRecording::Recording || state == DualRecording::Stopping;
-	};
-	return active(horizontalRecording) || active(verticalRecording);
+	if (!verticalRecording)
+		return false;
+	const auto state = verticalRecording->state.load();
+	return state == DualRecording::Recording || state == DualRecording::Stopping;
 }
 
-void OBSBasic::ToggleDualRecordings()
+bool OBSBasic::VerticalRecordingEnabled() const
 {
-	if (!horizontalRecording || !verticalRecording)
-		return;
-	if (DualRecordingsActive()) {
-		StopDualRecordings();
-		return;
-	}
-	StartDualRecording(*horizontalRecording);
-	StartDualRecording(*verticalRecording);
+	return Config() && config_get_bool(Config(), "Video", "RecordVertical");
 }
 
-void OBSBasic::SaveDualRecordingFolders(const QString &horizontal, const QString &vertical)
+void OBSBasic::SaveVerticalRecordingFolder(const QString &vertical)
 {
-	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordHorizontalDirectory", horizontal.toUtf8().constData());
 	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordVerticalDirectory", vertical.toUtf8().constData());
 	config_save_safe(App()->GetUserConfig(), "tmp", nullptr);
 }
@@ -1426,9 +1428,7 @@ void OBSBasic::InitDualStreamDock()
 	auto *editLayer = sourceToolbar->addAction(ui->actionEditTransform->icon(), tr("Edit Transform"));
 	editLayer->setToolTip(tr("Edit Transform"));
 	sourceToolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-	horizontalRecording = std::make_unique<DualRecording>();
 	verticalRecording = std::make_unique<DualRecording>();
-	horizontalRecording->vertical = false;
 	verticalRecording->vertical = true;
 	auto *recordingStatus = new QLabel(content);
 	layout->addWidget(recordingStatus);
@@ -1611,7 +1611,7 @@ void OBSBasic::InitDualStreamDock()
 	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 
 	auto *timer = new QTimer(dock);
-	connect(timer, &QTimer::timeout, this, [this, recordingStatus, wasActive = false, wasLive = false]() mutable {
+	connect(timer, &QTimer::timeout, this, [this, recordingStatus, wasActive = false, wasLive = false, wasVerticalRecording = false]() mutable {
 		if (verticalPreviewPanel && verticalPreviewPanel->isVisible() && !(QApplication::mouseButtons() & Qt::LeftButton)) {
 			RefreshVerticalScenes();
 			RefreshVerticalLayers();
@@ -1631,6 +1631,15 @@ void OBSBasic::InitDualStreamDock()
 			sysTrayStream->setText(active ? QTStr("Basic.Main.StopStreaming") : QTStr("Basic.Main.StartStreaming"));
 		wasActive = active;
 		wasLive = active && (live || wasLive);
+		const bool verticalActive = DualRecordingsActive();
+		if (wasVerticalRecording && !verticalActive) {
+			verticalRecording->started.Disconnect();
+			verticalRecording->stopped.Disconnect();
+			verticalRecording->output = nullptr;
+			verticalStopRequested = false;
+			OnDeactivate();
+		}
+		wasVerticalRecording = verticalActive;
 		UpdateCleanSourceRecording();
 		auto stateName = [](DualRecording::State state) {
 			switch (state) {
@@ -1640,8 +1649,9 @@ void OBSBasic::InitDualStreamDock()
 			default: return QStringLiteral("Ready");
 			}
 		};
-		recordingStatus->setText(tr("Horizontal: %1 · Vertical: %2 · MKV (H.264/AAC)")
-			.arg(stateName(horizontalRecording->state.load()), stateName(verticalRecording->state.load())) +
+		recordingStatus->setText(tr("Horizontal: %1 · Vertical: %2")
+			.arg(RecordingActive() ? tr("Recording") : tr("Ready"),
+				VerticalRecordingEnabled() || verticalActive ? stateName(verticalRecording->state.load()) : tr("Disabled")) +
 			(cleanSourceRecording ? tr(" · Clean source: %1").arg(stateName(cleanSourceRecording->state.load())) : QString()));
 	});
 	timer->start(250);
