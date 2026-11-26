@@ -138,6 +138,7 @@ void OBSBasicSettings::InitStreamPage()
 	auto updateMode = [this] {
 		// Retain existing account/service controls as an explicit single-stream fallback.
 		ui->widget_5->setVisible(!multiStreamMode->isChecked());
+		ui->streamStackWidget->setVisible(!multiStreamMode->isChecked());
 	};
 	connect(multiStreamMode, &QCheckBox::toggled, this, [dirty, updateMode](bool) { dirty(); updateMode(); });
 	auto editEntry = [this, dirty](bool existing) {
@@ -214,6 +215,7 @@ void OBSBasicSettings::LoadMultiStreamSettings()
 	const QSignalBlocker block(multiStreamMode);
 	multiStreamMode->setChecked(main->MultiStreamEnabled());
 	ui->widget_5->setVisible(!multiStreamMode->isChecked());
+		ui->streamStackWidget->setVisible(!multiStreamMode->isChecked());
 	multiStreamList->clear();
 	const auto entries = main->MultiStreamDestinations();
 	for (const auto &value : entries) {

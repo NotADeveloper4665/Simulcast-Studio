@@ -821,7 +821,7 @@ private:
 
 	inline void OnDeactivate()
 	{
-		if (!outputHandler->Active() && !ui->profileMenu->isEnabled()) {
+		if (!Active() && !ui->profileMenu->isEnabled()) {
 			ui->profileMenu->setEnabled(true);
 			ui->autoConfigure->setEnabled(true);
 			App()->DecrementSleepInhibition();
@@ -833,7 +833,7 @@ private:
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);
 				trayIcon->setIcon(QIcon::fromTheme("simulcast-studio-tray", trayIconFile));
 			}
-		} else if (outputHandler->Active() && trayIcon && trayIcon->isVisible()) {
+		} else if (Active() && trayIcon && trayIcon->isVisible()) {
 			if (os_atomic_load_bool(&recording_paused)) {
 				QIcon trayIconFile = QIcon(OBS_BASIC_TRAY_PAUSED);
 				trayIconFile.setIsMask(OBS_BASIC_TRAY_MASK);

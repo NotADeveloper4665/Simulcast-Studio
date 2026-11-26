@@ -32,12 +32,6 @@ constexpr char VerticalSceneName[] = "Vertical Program";
 constexpr int VerticalWidth = 1080;
 constexpr int VerticalHeight = 1920;
 
-bool IsYouTubeServer(const QString &server)
-{
-	const QString host = QUrl(server).host().toLower();
-	return host == QStringLiteral("youtube.com") || host.endsWith(QStringLiteral(".youtube.com"));
-}
-
 int HardwareEncoderPriority(const char *id)
 {
 	if (!id)
@@ -104,13 +98,6 @@ bool GetVerticalVideoInfo(obs_video_info &video)
 	return true;
 }
 
-QDialogButtonBox *DualStreamDialogButtons(QDialog &dialog)
-{
-	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
-	QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-	QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	return buttons;
-}
 } // namespace
 
 obs_canvas_t *OBSBasic::GetVerticalCanvas() const
@@ -240,6 +227,8 @@ void OBSBasic::EditVerticalLayer()
 
 QJsonArray OBSBasic::MultiStreamDestinations() const
 {
+	if (!Config())
+		return {};
 	const char *saved = config_get_string(Config(), "Stream1", "SimulcastDestinations");
 	if (saved && *saved) {
 		const auto document = QJsonDocument::fromJson(QByteArray(saved));
@@ -262,6 +251,8 @@ QJsonArray OBSBasic::MultiStreamDestinations() const
 
 bool OBSBasic::MultiStreamEnabled() const
 {
+	if (!Config())
+		return false;
 	if (config_has_user_value(Config(), "Stream1", "SimulcastMultiStream"))
 		return config_get_bool(Config(), "Stream1", "SimulcastMultiStream");
 	return !MultiStreamDestinations().isEmpty();
@@ -387,6 +378,12 @@ void OBSBasic::StartMultiStream()
 	}
 	for (const auto &destination : streamDestinations)
 		StartStreamDestination(*destination);
+	if (MultiStreamActive()) {
+		OnActivate();
+		OnEvent(OBS_FRONTEND_EVENT_STREAMING_STARTING);
+	} else {
+		QMessageBox::warning(this, tr("Multi-Stream"), tr("No destinations could be started. Check the stream settings and log."));
+	}
 	SaveProject();
 }
 
@@ -833,7 +830,45 @@ void OBSBasic::InitDualStreamDock()
 					CreateFiltersWindow(obs_sceneitem_get_source(item));
 				});
 			});
-			menu.addAction(tr("Edit Transform"), this, &OBSBasic::EditVerticalLayer);
+			auto *transformMenu = menu.addMenu(tr("Transform"));
+			transformMenu->addAction(tr("Edit Transform"), this, &OBSBasic::EditVerticalLayer);
+			auto fit = [this, id = obs_sceneitem_get_id(item)](obs_bounds_type bounds) {
+				auto target = GetVerticalScene(false);
+				if (!target)
+					return;
+				auto *layer = obs_scene_find_sceneitem_by_id(target, id);
+				if (!layer || obs_sceneitem_locked(layer))
+					return;
+				OBSDataAutoRelease before = obs_scene_save_transform_states(target, true);
+				obs_transform_info info{};
+				vec2_set(&info.scale, 1.0f, 1.0f);
+				info.alignment = OBS_ALIGN_TOP | OBS_ALIGN_LEFT;
+				info.bounds_alignment = OBS_ALIGN_CENTER;
+				info.bounds_type = bounds;
+				if (bounds != OBS_BOUNDS_NONE)
+					vec2_set(&info.bounds, float(VerticalWidth), float(VerticalHeight));
+				obs_sceneitem_set_info2(layer, &info);
+				if (bounds == OBS_BOUNDS_NONE) {
+					obs_sceneitem_crop crop{};
+					obs_sceneitem_set_crop(layer, &crop);
+				}
+				OBSDataAutoRelease after = obs_scene_save_transform_states(target, true);
+				if (before && after) {
+					const std::string oldState(obs_data_get_json(before)), newState(obs_data_get_json(after));
+					if (oldState != newState) {
+						auto apply = [](const std::string &json) {
+							obs_scene_load_transform_states(json.c_str());
+							OBSBasic::Get()->SaveProject();
+						};
+						undo_s.add_action(tr("Vertical Transform"), apply, apply, oldState, newState);
+					}
+				}
+				SaveProject();
+			};
+			transformMenu->addAction(tr("Fit to Screen"), this, [fit] { fit(OBS_BOUNDS_SCALE_INNER); });
+			transformMenu->addAction(tr("Stretch to Screen"), this, [fit] { fit(OBS_BOUNDS_STRETCH); });
+			transformMenu->addAction(tr("Reset Transform"), this, [fit] { fit(OBS_BOUNDS_NONE); });
+			transformMenu->setEnabled(!obs_sceneitem_locked(item));
 			auto *visibility = menu.addAction(tr("Visible"));
 			visibility->setCheckable(true);
 			visibility->setChecked(obs_sceneitem_visible(item));
@@ -871,7 +906,21 @@ void OBSBasic::InitDualStreamDock()
 	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 
 	auto *timer = new QTimer(dock);
-	connect(timer, &QTimer::timeout, this, [this, recordingStatus] {
+	connect(timer, &QTimer::timeout, this, [this, recordingStatus, wasActive = false, wasLive = false]() mutable {
+		const bool active = MultiStreamActive();
+		const bool live = std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
+			return destination->state.load() == StreamDestination::Live;
+		});
+		if (live && !wasLive)
+			OnEvent(OBS_FRONTEND_EVENT_STREAMING_STARTED);
+		if (wasActive && !active) {
+			OnEvent(OBS_FRONTEND_EVENT_STREAMING_STOPPED);
+			OnDeactivate();
+		}
+		if ((active || wasActive) && sysTrayStream)
+			sysTrayStream->setText(active ? QTStr("Basic.Main.StopStreaming") : QTStr("Basic.Main.StartStreaming"));
+		wasActive = active;
+		wasLive = active && (live || wasLive);
 		auto stateName = [](DualRecording::State state) {
 			switch (state) {
 			case DualRecording::Recording: return QStringLiteral("Recording");

@@ -1431,7 +1431,7 @@ static inline enum video_colorspace GetVideoColorSpaceFromName(const char *name)
 
 int OBSBasic::ResetVideo()
 {
-	if (outputHandler && outputHandler->Active()) {
+	if (Active()) {
 		return OBS_VIDEO_CURRENTLY_ACTIVE;
 	}
 

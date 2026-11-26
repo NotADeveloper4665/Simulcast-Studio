@@ -36,8 +36,10 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 	connect(streamStatusTimer, &QTimer::timeout, this, [this, main, wasMulti = false]() mutable {
 		const bool multi = main->MultiStreamEnabled() || main->MultiStreamActive();
 		if (!multi) {
-			if (wasMulti)
+			if (wasMulti) {
 				StreamingStopped(false);
+				ui->streamButton->setToolTip(QString());
+			}
 			wasMulti = false;
 			return;
 		}
@@ -53,8 +55,7 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 			}
 		}
 		const bool active = live || connecting || stopping;
-		const QString label = active ? tr("Stop Streaming (%1 live, %2 connecting)").arg(live).arg(connecting)
-			: tr("Start Streaming");
+		const QString label = active ? tr("Stop Streaming") : tr("Start Streaming");
 		if (ui->streamButton->text() != label) {
 			ui->streamButton->setText(label);
 			setClasses(ui->streamButton, active ? "state-active" : "");
