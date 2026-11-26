@@ -25,13 +25,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
-      - name: Compile independent stock OBS plugin
-        run: |
-          mkdir -p /tmp/stock-probe/data
-          rpm -q obs-studio-devel
-          cc -shared -fPIC ci/plugin-compat/stock-filter.c -o /tmp/stock-probe/stock-filter.so $(pkg-config --cflags --libs libobs)
-          cc ci/plugin-compat/load-filter.c -o /tmp/stock-probe/load-filter $(pkg-config --cflags --libs libobs)
-          xvfb-run -a /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data
       - name: Configure and compile
         shell: bash
         run: |
@@ -63,6 +56,27 @@ jobs:
           if grep -q 'not found' /tmp/simulcast-ldd; then exit 1; fi
           QT_QPA_PLATFORM=offscreen simulcast-studio --version
           (cd dist && sha256sum *.rpm > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulcast-compatibility-candidate-rpm
+          path: dist/*.rpm
+          if-no-files-found: error
+      - name: Compile independent stock OBS plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/stock-probe/data
+          rpm -q obs-studio-devel
+          header=$(rpm -ql obs-studio-devel | grep '/obs-module.h
+          cc -shared -fPIC ci/plugin-compat/stock-filter.c -o /tmp/stock-probe/stock-filter.so -I"$sdk_include" $(pkg-config --cflags --libs libobs)
+          cc ci/plugin-compat/load-filter.c -o /tmp/stock-probe/load-filter -I"$sdk_include" $(pkg-config --cflags --libs libobs)
+          xvfb-run -a /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data
+ | head -n1)
+          test -f "$header"
+          sdk_include=$(dirname "$header")
+          cc -shared -fPIC ci/plugin-compat/stock-filter.c -o /tmp/stock-probe/stock-filter.so -I"$sdk_include" $(pkg-config --cflags --libs libobs)
+          cc ci/plugin-compat/load-filter.c -o /tmp/stock-probe/load-filter -I"$sdk_include" $(pkg-config --cflags --libs libobs)
+          xvfb-run -a /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data
       - name: Verify external plugin against installed Simulcast
         shell: bash
         run: |
