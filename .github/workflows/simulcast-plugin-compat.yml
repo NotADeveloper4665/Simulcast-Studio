@@ -19,12 +19,25 @@ jobs:
           dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3
           dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
           dnf -y builddep obs-studio
-          dnf -y install x264-devel obs-studio-devel binutils xorg-x11-server-Xvfb xorg-x11-xauth
+          dnf -y install x264-devel obs-studio-devel binutils xorg-x11-server-Xvfb xorg-x11-xauth nss nspr atk at-spi2-atk at-spi2-core cups-libs libXcomposite libXdamage libXrandr libXcursor libXi libXtst libxkbcommon libdrm mesa-libgbm alsa-lib gtk3
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
+      - name: Fetch pinned Chromium Embedded Framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --proto '=https' -o /tmp/simulcast-cef.tar.xz https://github.com/obs-rust/cef/releases/download/8078-r2/cef_binary_8078_linux_x86_64.tar.xz
+          echo 'dc463c360d4b8e4eb482fa78a5b92b996b053a4a8650dba3052c89390430ac9c  /tmp/simulcast-cef.tar.xz' | sha256sum -c -
+          mkdir -p /opt/simulcast-cef
+          tar -xJf /tmp/simulcast-cef.tar.xz -C /opt/simulcast-cef
+          header=$(find /opt/simulcast-cef -path '*/include/cef_version.h' -print -quit)
+          test -f "$header"
+          cef_root=$(dirname "$(dirname "$header")")
+          test -f "$cef_root/Release/libcef.so"
+          echo "CEF_ROOT_DIR=$cef_root" >> "$GITHUB_ENV"
       - name: Configure and compile
         shell: bash
         run: |
@@ -36,7 +49,7 @@ jobs:
           rustup component add rustfmt clippy
           rustc --version
           cargo --version
-          cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
+          cmake --preset fedora -DENABLE_BROWSER=ON -DCEF_ROOT_DIR="$CEF_ROOT_DIR" -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
           cmake --build build_fedora --parallel 4
       - name: Package and validate Fedora RPM
         shell: bash
@@ -55,6 +68,14 @@ jobs:
           ldd /usr/bin/simulcast-studio | tee /tmp/simulcast-ldd
           if grep -q 'not found' /tmp/simulcast-ldd; then exit 1; fi
           QT_QPA_PLATFORM=offscreen simulcast-studio --version
+          core=/usr/lib64/obs-studio-rust/obs-modules/core
+          for file in obs-browser.so obs-browser-page libcef.so icudtl.dat resources.pak v8_context_snapshot.bin chrome-sandbox; do
+            test -f "$core/$file"
+          done
+          test -d "$core/locales"
+          ldd "$core/obs-browser.so" | tee dist/browser-module-ldd.txt
+          ldd "$core/obs-browser-page" | tee dist/browser-helper-ldd.txt
+          if grep -q 'not found' dist/browser-*-ldd.txt; then exit 1; fi
           (cd dist && sha256sum *.rpm > SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
@@ -67,11 +88,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/stock-probe/data
           rpm -q obs-studio-devel
-          header=$(rpm -ql obs-studio-devel | grep '/obs-module.h
-          cc -shared -fPIC ci/plugin-compat/stock-filter.c -o /tmp/stock-probe/stock-filter.so -I"$sdk_include" $(pkg-config --cflags --libs libobs)
-          cc ci/plugin-compat/load-filter.c -o /tmp/stock-probe/load-filter -I"$sdk_include" $(pkg-config --cflags --libs libobs)
-          xvfb-run -a /tmp/stock-probe/load-filter /tmp/stock-probe/stock-filter.so /tmp/stock-probe/data
- | head -n1)
+          header=$(rpm -ql obs-studio-devel | awk '/\/obs-module[.]h$/ && !found {print; found=1}')
           test -f "$header"
           sdk_include=$(dirname "$header")
           cc -shared -fPIC ci/plugin-compat/stock-filter.c -o /tmp/stock-probe/stock-filter.so -I"$sdk_include" $(pkg-config --cflags --libs libobs)
