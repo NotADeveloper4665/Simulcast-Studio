@@ -26,6 +26,8 @@
 #include <QAbstractItemModel>
 #include <QMouseEvent>
 #include <QStyle>
+#include <QDropEvent>
+#include <functional>
 #include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
@@ -36,6 +38,22 @@ constexpr char VerticalCanvasName[] = "Dual Stream Vertical";
 constexpr char VerticalSceneName[] = "Vertical Program";
 constexpr int VerticalWidth = 1080;
 constexpr int VerticalHeight = 1920;
+
+// Apply the final list order after Qt completes an internal drag, rather
+// than rebuilding the list from OBS while Qt still owns the drag event.
+class PortraitOrderList : public QListWidget {
+public:
+	using QListWidget::QListWidget;
+	std::function<void()> orderChanged;
+
+protected:
+	void dropEvent(QDropEvent *event) override
+	{
+		QListWidget::dropEvent(event);
+		if (event->isAccepted() && orderChanged)
+			orderChanged();
+	}
+};
 
 int HardwareEncoderPriority(const char *id)
 {
@@ -875,7 +893,8 @@ void OBSBasic::InitDualStreamDock()
 		toolbar->setMovable(false);
 		toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
 	}
-	verticalScenes = new QListWidget(content);
+	auto *sceneList = new PortraitOrderList(content);
+	verticalScenes = sceneList;
 	verticalScenes->setObjectName(QStringLiteral("verticalScenes"));
 	verticalScenes->setDragDropMode(QAbstractItemView::InternalMove);
 	verticalScenes->setDefaultDropAction(Qt::MoveAction);
@@ -890,7 +909,7 @@ void OBSBasic::InitDualStreamDock()
 			verticalSceneOrder.append(verticalScenes->item(i)->data(Qt::UserRole).toString());
 		SaveProject();
 	};
-	connect(verticalScenes->model(), &QAbstractItemModel::rowsMoved, this, saveSceneOrder);
+	sceneList->orderChanged = saveSceneOrder;
 	auto toolbarAction = [](QToolBar *toolbar, QAction *original, const QString &name) {
 		auto *action = toolbar->addAction(original->icon(), name);
 		action->setProperty("class", original->property("class"));
@@ -941,6 +960,25 @@ void OBSBasic::InitDualStreamDock()
 		if (scene)
 			SelectVerticalScene(QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(scene))));
 	});
+	auto duplicateScene = [this] {
+		auto scene = GetVerticalScene(false);
+		if (!scene)
+			return;
+		bool ok = false;
+		const auto original = QString::fromUtf8(obs_source_get_name(obs_scene_get_source(scene)));
+		const auto name = QInputDialog::getText(this, tr("Duplicate Scene"), tr("Name"), QLineEdit::Normal,
+			original + tr(" Copy"), &ok).trimmed();
+		if (!ok || name.isEmpty())
+			return;
+		OBSSceneAutoRelease existing = obs_canvas_get_scene_by_name(GetVerticalCanvas(), name.toUtf8().constData());
+		if (existing) {
+			QMessageBox::warning(this, tr("Duplicate Scene"), tr("That scene name already exists."));
+			return;
+		}
+		OBSSceneAutoRelease copy = obs_scene_duplicate(scene, name.toUtf8().constData(), OBS_SCENE_DUP_REFS);
+		if (copy)
+			SelectVerticalScene(QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(copy))));
+	};
 	connect(removeScene, &QAction::triggered, this, [this] {
 		if (verticalScenes->count() <= 1)
 			return;
@@ -974,12 +1012,13 @@ void OBSBasic::InitDualStreamDock()
 	connect(sceneUp, &QAction::triggered, this, [moveScene] { moveScene(-1); });
 	connect(sceneDown, &QAction::triggered, this, [moveScene] { moveScene(1); });
 	verticalScenes->setContextMenuPolicy(Qt::CustomContextMenu);
-	connect(verticalScenes, &QWidget::customContextMenuRequested, this, [this, addScene, removeScene, sceneFilters, renameScene, sceneUp, sceneDown](const QPoint &pos) {
+	connect(verticalScenes, &QWidget::customContextMenuRequested, this, [this, addScene, removeScene, sceneFilters, renameScene, duplicateScene, sceneUp, sceneDown](const QPoint &pos) {
 		if (auto *item = verticalScenes->itemAt(pos))
 			verticalScenes->setCurrentItem(item);
 		QMenu menu(verticalScenes);
 		menu.addAction(addScene);
 		menu.addAction(tr("Rename"), this, renameScene);
+		menu.addAction(tr("Duplicate"), this, duplicateScene);
 		menu.addAction(removeScene);
 		menu.addAction(sceneFilters);
 		menu.addAction(sceneUp);
@@ -990,7 +1029,25 @@ void OBSBasic::InitDualStreamDock()
 	layout->addWidget(new QLabel(tr("Vertical Scenes"), content));
 	layout->addWidget(verticalScenes, 1);
 	layout->addWidget(sceneToolbar);
-	verticalLayers = new QListWidget(content);
+	auto *sourceList = new PortraitOrderList(content);
+	verticalLayers = sourceList;
+	verticalLayers->setDragDropMode(QAbstractItemView::InternalMove);
+	verticalLayers->setDefaultDropAction(Qt::MoveAction);
+	sourceList->orderChanged = [this] {
+		auto scene = GetVerticalScene(false);
+		if (!scene)
+			return;
+		QList<qlonglong> ids;
+		for (int i = 0; i < verticalLayers->count(); ++i)
+			ids.append(verticalLayers->item(i)->data(Qt::UserRole).toLongLong());
+		for (int i = 0; i < ids.size(); ++i) {
+			if (auto *item = obs_scene_find_sceneitem_by_id(scene, ids[i]))
+				obs_sceneitem_set_order_position(item, static_cast<int>(ids.size()) - 1 - i);
+		}
+		verticalLayersFingerprint.clear();
+		QTimer::singleShot(0, this, &OBSBasic::RefreshVerticalLayers);
+		SaveProject();
+	};
 	verticalLayers->setObjectName(QStringLiteral("verticalSources"));
 	verticalLayers->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	connect(verticalPreview, &OBSBasicPreview::portraitSelectionChanged, this, &OBSBasic::RefreshVerticalLayers);
@@ -1018,7 +1075,7 @@ void OBSBasic::InitDualStreamDock()
 	sourceToolbar->addSeparator();
 	auto *raiseLayer = toolbarAction(sourceToolbar, ui->actionSourceUp, tr("Move Source Up"));
 	auto *lowerLayer = toolbarAction(sourceToolbar, ui->actionSourceDown, tr("Move Source Down"));
-	auto *editLayer = sourceToolbar->addAction(tr("Edit Transform"));
+	auto *editLayer = sourceToolbar->addAction(ui->actionEditTransform->icon(), tr("Edit Transform"));
 	editLayer->setToolTip(tr("Edit Transform"));
 	sourceToolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
 	horizontalRecording = std::make_unique<DualRecording>();
