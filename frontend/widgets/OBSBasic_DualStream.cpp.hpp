@@ -27,6 +27,9 @@
 #include <QMouseEvent>
 #include <QStyle>
 #include <QDropEvent>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
+#include <QPainter>
 #include <functional>
 #include <QDir>
 #include <QFileInfo>
@@ -41,6 +44,26 @@ constexpr int VerticalHeight = 1920;
 
 // Apply the final list order after Qt completes an internal drag, rather
 // than rebuilding the list from OBS while Qt still owns the drag event.
+// The row widget paints its own label, icon and buttons. Let Qt paint
+// only the selection/focus background, not a second copy of the name.
+class PortraitSourceDelegate : public QStyledItemDelegate {
+public:
+	using QStyledItemDelegate::QStyledItemDelegate;
+
+	void paint(QPainter *painter, const QStyleOptionViewItem &option,
+		   const QModelIndex &index) const override
+	{
+		QStyleOptionViewItem background(option);
+		initStyleOption(&background, index);
+		background.text.clear();
+		background.icon = QIcon();
+		background.features &= ~(QStyleOptionViewItem::HasDisplay | QStyleOptionViewItem::HasDecoration);
+		const auto *widget = background.widget;
+		const auto *style = widget ? widget->style() : QApplication::style();
+		style->drawControl(QStyle::CE_ItemViewItem, &background, painter, widget);
+	}
+};
+
 class PortraitOrderList : public QListWidget {
 public:
 	using QListWidget::QListWidget;
@@ -304,24 +327,38 @@ void OBSBasic::RefreshVerticalLayers()
 			const auto icon = row.type == QStringLiteral("scene") ? GetSceneIcon() :
 				row.type == QStringLiteral("group") ? GetGroupIcon() : GetSourceIcon(row.type.toUtf8().constData());
 			auto *widget = new QWidget(verticalLayers);
+			widget->setAttribute(Qt::WA_TranslucentBackground);
+			widget->setAutoFillBackground(false);
 			auto *layout = new QHBoxLayout(widget);
 			layout->setContentsMargins(3, 0, 3, 0);
 			layout->setSpacing(4);
 			auto *iconLabel = new QLabel(widget);
 			iconLabel->setPixmap(icon.pixmap(16, 16));
+			iconLabel->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
+			iconLabel->setStyleSheet(QStringLiteral("background: transparent;"));
 			iconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-			auto *name = new QLabel(row.name, widget);
+			auto *name = new QLabel(widget);
+			name->setTextFormat(Qt::PlainText);
+			name->setText(row.name);
+			name->setToolTip(row.name);
+			name->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+			name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+			name->setMinimumWidth(0);
+			name->setStyleSheet(QStringLiteral("background: transparent;"));
+			idian::Utils::toggleClass(name, "text-muted", !row.visible);
 			name->setAttribute(Qt::WA_TransparentForMouseEvents);
 			layout->addWidget(iconLabel);
 			layout->addWidget(name, 1);
 			auto *visible = new QCheckBox(widget);
 			idian::Utils::addClass(visible, "checkbox-icon");
 			idian::Utils::addClass(visible, "indicator-visibility");
+			visible->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
 			visible->setChecked(row.visible);
 			visible->setToolTip(tr("Show or hide source"));
 			auto *locked = new QCheckBox(widget);
 			idian::Utils::addClass(locked, "checkbox-icon");
 			idian::Utils::addClass(locked, "indicator-lock");
+			locked->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
 			locked->setChecked(row.locked);
 			locked->setToolTip(tr("Lock source"));
 			layout->addWidget(visible);
@@ -1031,6 +1068,7 @@ void OBSBasic::InitDualStreamDock()
 	layout->addWidget(sceneToolbar);
 	auto *sourceList = new PortraitOrderList(content);
 	verticalLayers = sourceList;
+	verticalLayers->setItemDelegate(new PortraitSourceDelegate(verticalLayers));
 	verticalLayers->setDragDropMode(QAbstractItemView::InternalMove);
 	verticalLayers->setDefaultDropAction(Qt::MoveAction);
 	sourceList->orderChanged = [this] {
