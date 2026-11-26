@@ -55,6 +55,8 @@ private:
 	};
 	QSize canvasSize;
 	const char *canvasName = nullptr;
+	mutable std::mutex portraitSceneMutex;
+	OBSScene portraitEditingScene;
 	OBSScene EditingScene() const;
 	PreviewGeometry EditingGeometry() const;
 	vec2 EditingSize() const;
@@ -149,6 +151,7 @@ public:
 
 	void Init();
 	void InitPortrait(const char *name, const QSize &size);
+	void SetPortraitScene(OBSScene scene);
 	void ResetEditingState();
 
 	static OBSBasicPreview *Get();

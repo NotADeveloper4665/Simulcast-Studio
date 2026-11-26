@@ -300,6 +300,7 @@ void OBSBasic::SetPreviewProgramMode(bool enabled)
 			       "-------------------");
 	}
 
+	SetVerticalStudioMode(enabled);
 	ResetUI();
 	UpdateTitleBar();
 }

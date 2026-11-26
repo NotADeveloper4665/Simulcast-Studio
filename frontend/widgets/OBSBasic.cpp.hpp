@@ -1836,6 +1836,8 @@ void OBSBasic::closeWindow()
 	ui->preview->DestroyDisplay();
 	if (verticalPreview)
 		verticalPreview->DestroyDisplay();
+	if (verticalProgramDisplay)
+		verticalProgramDisplay->DestroyDisplay();
 	if (program) {
 		program->DestroyDisplay();
 	}

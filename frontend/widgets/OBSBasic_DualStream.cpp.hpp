@@ -30,6 +30,7 @@
 #include <QStyledItemDelegate>
 #include <QStyleOptionViewItem>
 #include <QPainter>
+#include <utility/display-helpers.hpp>
 #include <functional>
 #include <QDir>
 #include <QFileInfo>
@@ -224,11 +225,131 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 	}
 	if (scene && create) {
 		verticalSceneUuid = QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(scene)));
-		OBSSourceAutoRelease channel = obs_canvas_get_channel(canvas, 0);
-		if (channel.Get() != obs_scene_get_source(scene))
-			obs_canvas_set_channel(canvas, 0, obs_scene_get_source(scene));
+		if (verticalPreview && verticalPreviewPanel && !verticalPreviewPanel->isHidden())
+			verticalPreview->SetPortraitScene(scene);
+		if (IsPreviewProgramMode()) {
+			OBSSourceAutoRelease channel = obs_canvas_get_channel(canvas, 0);
+			if (!verticalStudioProgramReady || !channel) {
+				auto programScene = FindVerticalScene(verticalProgramUuid);
+				CommitVerticalProgram(programScene ? programScene : scene);
+			}
+		} else {
+			OBSSourceAutoRelease channel = obs_canvas_get_channel(canvas, 0);
+			if (channel.Get() != obs_scene_get_source(scene))
+				obs_canvas_set_channel(canvas, 0, obs_scene_get_source(scene));
+			verticalProgramUuid = verticalSceneUuid;
+			verticalStudioProgramReady = false;
+		}
 	}
 	return scene;
+}
+
+OBSScene OBSBasic::FindVerticalScene(const QString &uuid) const
+{
+	if (uuid.isEmpty())
+		return {};
+	auto *canvas = GetVerticalCanvas();
+	if (!canvas)
+		return {};
+	struct Lookup {
+		QString uuid;
+		OBSScene scene;
+	} lookup{uuid, {}};
+	obs_canvas_enum_scenes(canvas, [](void *data, obs_source_t *source) {
+		auto &result = *static_cast<Lookup *>(data);
+		if (obs_source_is_scene(source) && QString::fromUtf8(obs_source_get_uuid(source)) == result.uuid) {
+			result.scene = OBSScene(obs_scene_from_source(source));
+			return false;
+		}
+		return true;
+	}, &lookup);
+	return lookup.scene;
+}
+
+bool OBSBasic::CommitVerticalProgram(OBSScene scene)
+{
+	auto *canvas = GetVerticalCanvas();
+	if (!canvas || !scene || !obs_canvas_has_video(canvas))
+		return false;
+	// Freeze scene-item layout in a private copy, as horizontal Studio Mode
+	// does with scene duplication enabled. Source references remain shared.
+	const auto *source = obs_scene_get_source(scene);
+	OBSSceneAutoRelease snapshot = obs_scene_duplicate(scene, obs_source_get_name(source), OBS_SCENE_DUP_PRIVATE_REFS);
+	if (!snapshot) {
+		blog(LOG_WARNING, "Simulcast: unable to duplicate vertical program scene");
+		return false;
+	}
+	obs_canvas_set_channel(canvas, 0, obs_scene_get_source(snapshot));
+	verticalProgramUuid = QString::fromUtf8(obs_source_get_uuid(source));
+	verticalStudioProgramReady = true;
+	UpdateVerticalStudioUI();
+	return true;
+}
+
+void OBSBasic::TransitionVertical()
+{
+	if (!IsPreviewProgramMode())
+		return;
+	auto scene = GetVerticalScene(true);
+	if (scene && CommitVerticalProgram(scene))
+		SaveProject();
+}
+
+void OBSBasic::SetVerticalStudioMode(bool enabled)
+{
+	if (!GetVerticalCanvas() && (!verticalPreviewPanel || verticalPreviewPanel->isHidden())) {
+		UpdateVerticalStudioUI();
+		return;
+	}
+	if (enabled) {
+		verticalStudioProgramReady = false;
+		// Keep the previously live scene on entry.
+		GetVerticalScene(true);
+	} else {
+		// Return to the actual program scene, not an uncommitted preview.
+		if (FindVerticalScene(verticalProgramUuid))
+			verticalSceneUuid = verticalProgramUuid;
+		if (verticalPreview)
+			verticalPreview->ResetEditingState();
+		verticalStudioProgramReady = false;
+		GetVerticalScene(true);
+		verticalLayersFingerprint.clear();
+		RefreshVerticalScenes();
+		RefreshVerticalLayers();
+	}
+	UpdateVerticalStudioUI();
+}
+
+void OBSBasic::UpdateVerticalStudioUI()
+{
+	if (!verticalPreviewPanel || !verticalProgramPanel)
+		return;
+	const bool studio = IsPreviewProgramMode();
+	verticalProgramPanel->setVisible(studio);
+	verticalTransitionButton->setVisible(studio);
+	const auto preview = FindVerticalScene(verticalSceneUuid);
+	const auto program = FindVerticalScene(verticalProgramUuid);
+	const QString previewName = preview ? QString::fromUtf8(obs_source_get_name(obs_scene_get_source(preview))) : QString();
+	const QString programName = program ? QString::fromUtf8(obs_source_get_name(obs_scene_get_source(program))) : QString();
+	verticalPreviewTitle->setText(studio ? tr("Vertical Preview: %1").arg(previewName) : tr("Vertical Preview (9:16)"));
+	verticalProgramTitle->setText(tr("Vertical Program: %1").arg(programName));
+	verticalTransitionButton->setEnabled(studio && !!preview);
+	ui->previewLayout->setStretchFactor(verticalPreviewPanel, studio ? 2 : 1);
+}
+
+void OBSBasic::ClearVerticalStudioState()
+{
+	if (verticalPreview) {
+		verticalPreview->ResetEditingState();
+		verticalPreview->SetPortraitScene({});
+	}
+	if (auto *canvas = GetVerticalCanvas())
+		obs_canvas_set_channel(canvas, 0, nullptr);
+	verticalStudioProgramReady = false;
+	verticalProgramUuid.clear();
+	verticalSceneUuid.clear();
+	verticalSceneOrder.clear();
+	verticalLayersFingerprint.clear();
 }
 
 void OBSBasic::RefreshVerticalScenes()
@@ -273,6 +394,7 @@ void OBSBasic::RefreshVerticalScenes()
 	const int index = order.indexOf(verticalSceneUuid);
 	if (index >= 0 && verticalScenes->currentRow() != index)
 		verticalScenes->setCurrentRow(index);
+	UpdateVerticalStudioUI();
 }
 
 void OBSBasic::SelectVerticalScene(const QString &uuid)
@@ -614,7 +736,9 @@ void OBSBasic::StartStreamDestination(StreamDestination &destination)
 
 	video_t *video = obs_get_video();
 	if (destination.vertical) {
-		auto scene = GetVerticalScene(true);
+		GetVerticalScene(true);
+		OBSSourceAutoRelease live = GetVerticalCanvas() ? obs_canvas_get_channel(GetVerticalCanvas(), 0) : nullptr;
+		OBSScene scene(obs_scene_from_source(live));
 		bool hasLayer = false;
 		if (scene) {
 			obs_scene_enum_items(
@@ -902,19 +1026,66 @@ void OBSBasic::InitDualStreamDock()
 {
 	verticalPreviewPanel = new QWidget(ui->canvasEditor);
 	verticalPreviewPanel->setObjectName(QStringLiteral("verticalPreviewPanel"));
-	auto *previewLayout = new QVBoxLayout(verticalPreviewPanel);
+	auto *portraitLayout = new QVBoxLayout(verticalPreviewPanel);
+	portraitLayout->setContentsMargins(0, 0, 0, 0);
+	portraitLayout->setSpacing(2);
+	auto *portraitViews = new QHBoxLayout();
+	portraitViews->setContentsMargins(0, 0, 0, 0);
+	portraitViews->setSpacing(4);
+	portraitLayout->addLayout(portraitViews, 1);
+	auto *previewPane = new QWidget(verticalPreviewPanel);
+	auto *previewLayout = new QVBoxLayout(previewPane);
 	previewLayout->setContentsMargins(0, 0, 0, 0);
 	previewLayout->setSpacing(0);
-	auto *title = new QLabel(tr("Vertical Preview (9:16)"), verticalPreviewPanel);
-	title->setAlignment(Qt::AlignCenter);
-	previewLayout->addWidget(title);
+	verticalPreviewTitle = new QLabel(tr("Vertical Preview (9:16)"), previewPane);
+	verticalPreviewTitle->setAlignment(Qt::AlignCenter);
+	verticalPreviewTitle->setProperty("class", "label-preview-title");
+	previewLayout->addWidget(verticalPreviewTitle);
 
-	verticalPreview = new OBSBasicPreview(verticalPreviewPanel);
+	verticalPreview = new OBSBasicPreview(previewPane);
 	verticalPreview->setObjectName(QStringLiteral("verticalPreview"));
 	verticalPreview->InitPortrait(VerticalCanvasName, QSize(VerticalWidth, VerticalHeight));
 	verticalPreview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	verticalPreview->setMinimumWidth(140);
 	previewLayout->addWidget(verticalPreview, 1);
+	portraitViews->addWidget(previewPane, 1);
+	verticalProgramPanel = new QWidget(verticalPreviewPanel);
+	auto *programLayout = new QVBoxLayout(verticalProgramPanel);
+	programLayout->setContentsMargins(0, 0, 0, 0);
+	programLayout->setSpacing(0);
+	verticalProgramTitle = new QLabel(tr("Vertical Program"), verticalProgramPanel);
+	verticalProgramTitle->setAlignment(Qt::AlignCenter);
+	verticalProgramTitle->setProperty("class", "label-preview-title");
+	programLayout->addWidget(verticalProgramTitle);
+	verticalProgramDisplay = new OBSQTDisplay(verticalProgramPanel);
+	verticalProgramDisplay->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	verticalProgramDisplay->setMinimumWidth(100);
+	connect(verticalProgramDisplay, &OBSQTDisplay::DisplayCreated, this, [](OBSQTDisplay *display) {
+		obs_display_add_draw_callback(display->GetDisplay(), [](void *, uint32_t width, uint32_t height) {
+			OBSCanvasAutoRelease canvas = obs_get_canvas_by_name(VerticalCanvasName);
+			if (!canvas || !width || !height)
+				return;
+			int x = 0, y = 0;
+			float scale = 1.0f;
+			GetScaleAndCenterPos(VerticalWidth, VerticalHeight, static_cast<int>(width), static_cast<int>(height), x, y, scale);
+			gs_viewport_push();
+			gs_projection_push();
+			gs_ortho(0, float(VerticalWidth), 0, float(VerticalHeight), -100, 100);
+			gs_set_viewport(x, y, std::max(1, int(VerticalWidth * scale)), std::max(1, int(VerticalHeight * scale)));
+			obs_render_canvas_texture_src_color_only(canvas);
+			gs_load_vertexbuffer(nullptr);
+			gs_projection_pop();
+			gs_viewport_pop();
+		}, nullptr);
+	});
+	programLayout->addWidget(verticalProgramDisplay, 1);
+	portraitViews->addWidget(verticalProgramPanel, 1);
+	verticalTransitionButton = new QPushButton(tr("Transition Vertical"), verticalPreviewPanel);
+	verticalTransitionButton->setToolTip(tr("Send the vertical preview scene to the live vertical program (cut)."));
+	connect(verticalTransitionButton, &QPushButton::clicked, this, &OBSBasic::TransitionVertical);
+	portraitLayout->addWidget(verticalTransitionButton);
+	verticalProgramPanel->hide();
+	verticalTransitionButton->hide();
 	ui->previewLayout->addWidget(verticalPreviewPanel, 1);
 	verticalPreviewPanel->hide();
 
@@ -1020,6 +1191,10 @@ void OBSBasic::InitDualStreamDock()
 		if (verticalScenes->count() <= 1)
 			return;
 		auto scene = GetVerticalScene(false);
+		if (IsPreviewProgramMode() && verticalSceneUuid == verticalProgramUuid) {
+			QMessageBox::information(this, tr("Remove Scene"), tr("Transition to another vertical program scene before removing the on-air scene."));
+			return;
+		}
 		if (!scene || QMessageBox::question(this, tr("Remove Scene"), tr("Remove the selected vertical scene?")) != QMessageBox::Yes)
 			return;
 		const int row = verticalScenes->currentRow();
@@ -1280,6 +1455,7 @@ void OBSBasic::InitDualStreamDock()
 		verticalPreviewPanel->setVisible(visible);
 		if (!visible) {
 			verticalPreview->ResetEditingState();
+			verticalPreview->SetPortraitScene({});
 		}
 		ui->previewLayout->setStretchFactor(ui->previewContainer, visible ? 2 : 0);
 		ui->previewLayout->setStretchFactor(ui->previewDisabledWidget, visible ? 2 : 0);
@@ -1290,6 +1466,7 @@ void OBSBasic::InitDualStreamDock()
 			UpdateVerticalPreview();
 			RefreshVerticalLayers();
 		}
+		UpdateVerticalStudioUI();
 	};
 	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 

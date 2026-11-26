@@ -885,6 +885,7 @@ void OBSBasic::Save(SceneCollection &collection)
 	}
 	obs_data_set_array(saveData, "simulcast_vertical_scene_order", portraitOrder);
 	obs_data_set_string(saveData, "simulcast_vertical_scene", verticalSceneUuid.toUtf8().constData());
+	obs_data_set_string(saveData, "simulcast_vertical_program", verticalProgramUuid.toUtf8().constData());
 
 	// Current preview/program scenes
 	OBSScene scene = GetCurrentScene();
@@ -1175,6 +1176,7 @@ void OBSBasic::LoadData(obs_data_t *collectionData, SceneCollection &collection)
 	ClearSceneData();
 	verticalSceneOrder.clear();
 	verticalSceneUuid = QString::fromUtf8(obs_data_get_string(collectionData, "simulcast_vertical_scene"));
+	verticalProgramUuid = QString::fromUtf8(obs_data_get_string(collectionData, "simulcast_vertical_program"));
 	verticalLayersFingerprint.clear();
 	OBSDataArrayAutoRelease portraitOrder = obs_data_get_array(collectionData, "simulcast_vertical_scene_order");
 	for (size_t i = 0; portraitOrder && i < obs_data_array_count(portraitOrder); ++i) {
@@ -1387,6 +1389,8 @@ retryScene:
 	}
 
 	SetCurrentScene(curScene.Get(), true);
+	if (GetVerticalCanvas())
+		GetVerticalScene(true);
 
 	if (!curProgramScene) {
 		curProgramScene = std::move(curScene);
@@ -1565,8 +1569,11 @@ void OBSBasic::ClearSceneData()
 {
 	StopDualRecordings();
 	StopExtraStreams();
-	if (verticalPreview)
-		verticalPreview->ResetEditingState();
+	ClearVerticalStudioState();
+	if (verticalScenes) {
+		const QSignalBlocker block(verticalScenes);
+		verticalScenes->clear();
+	}
 	if (verticalLayers) {
 		const QSignalBlocker block(verticalLayers);
 		verticalLayers->clear();

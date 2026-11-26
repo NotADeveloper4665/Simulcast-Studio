@@ -29,6 +29,7 @@ OBSBasicPreview::~OBSBasicPreview()
 {
 	if (canvasName) {
 		DestroyDisplay();
+		SetPortraitScene({});
 	}
 	obs_enter_graphics();
 
@@ -65,9 +66,8 @@ OBSScene OBSBasicPreview::EditingScene() const
 		return OBSBasic::Get()->GetCurrentScene();
 	}
 
-	OBSCanvasAutoRelease canvas = obs_get_canvas_by_name(canvasName);
-	OBSSourceAutoRelease source = canvas ? obs_canvas_get_channel(canvas, 0) : nullptr;
-	return OBSScene(obs_scene_from_source(source));
+	std::lock_guard<std::mutex> lock(portraitSceneMutex);
+	return portraitEditingScene;
 }
 
 OBSBasicPreview::PreviewGeometry OBSBasicPreview::EditingGeometry() const
@@ -138,6 +138,23 @@ void OBSBasicPreview::InitPortrait(const char *name, const QSize &size)
 			},
 			this);
 	});
+}
+
+void OBSBasicPreview::SetPortraitScene(OBSScene scene)
+{
+	OBSScene previous;
+	{
+		std::lock_guard<std::mutex> lock(portraitSceneMutex);
+		if (portraitEditingScene.Get() == scene.Get())
+			return;
+		previous = std::move(portraitEditingScene);
+		portraitEditingScene = scene;
+	}
+	// Never call into libobs while holding the renderer's scene mutex.
+	if (scene)
+		obs_source_inc_showing(obs_scene_get_source(scene));
+	if (previous)
+		obs_source_dec_showing(obs_scene_get_source(previous));
 }
 
 void OBSBasicPreview::ResetEditingState()
