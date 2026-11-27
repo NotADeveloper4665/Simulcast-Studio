@@ -1,0 +1,80 @@
+name: Rust background removal
+on:
+  pull_request:
+    paths:
+      - 'plugins/rust-background-removal/**'
+      - '.github/workflows/rust-background-removal.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: plugins/rust-background-removal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install native SDK and runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libobs-dev libclang-dev pkg-config
+          echo "OBS_INCLUDE_DIR=$(dirname "$(dpkg -L libobs-dev | grep '/obs-module.h$' | head -1)")" >> "$GITHUB_ENV"
+          echo "OBS_LIB_DIR=$(pkg-config --variable=libdir libobs)" >> "$GITHUB_ENV"
+          python -m pip install onnx==1.17.0 onnxruntime==1.22.0
+          python tests/fixture.py "$RUNNER_TEMP/segmentation.onnx"
+          echo "SIMULCAST_TEST_MODEL=$RUNNER_TEMP/segmentation.onnx" >> "$GITHUB_ENV"
+          echo "ORT_DYLIB_PATH=$(python -c 'import pathlib,onnxruntime; print(next((pathlib.Path(onnxruntime.__file__).parent/"capi").glob("libonnxruntime.so*")))')" >> "$GITHUB_ENV"
+      - name: Test native bindings and CPU inference
+        run: cargo test --lib
+      - name: Check CUDA provider compilation
+        run: cargo check --features cuda
+      - name: Build plugin
+        run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulcast-background-removal-linux
+          path: plugins/rust-background-removal/target/release/libsimulcast_background_removal.so
+          if-no-files-found: error
+  fedora-rpm:
+    runs-on: ubuntu-24.04
+    container: fedora:44
+    defaults:
+      run:
+        working-directory: plugins/rust-background-removal
+    steps:
+      - name: Install build dependencies
+        working-directory: /
+        run: dnf install -y git tar gzip gcc gcc-c++ clang-devel rust cargo obs-studio-devel onnxruntime onnxruntime-devel rpm-build python3 python3-pip binutils
+      - uses: actions/checkout@v4
+      - name: Build and test plugin on Fedora 44
+        run: |
+          export OBS_INCLUDE_DIR="$(dirname "$(rpm -ql obs-studio-devel | grep '/obs-module.h$' | head -1)")"
+          export OBS_LIB_DIR=/usr/lib64
+          export ORT_DYLIB_PATH="$(rpm -ql onnxruntime | grep '/libonnxruntime.so\.[0-9].*' | head -1)"
+          python3 -m venv /tmp/onnx-fixture
+          /tmp/onnx-fixture/bin/pip install onnx
+          /tmp/onnx-fixture/bin/python tests/fixture.py /tmp/segmentation.onnx
+          export SIMULCAST_TEST_MODEL=/tmp/segmentation.onnx
+          cargo --version
+          cargo test --lib
+          export RUSTFLAGS='-C link-arg=-Wl,-rpath,$ORIGIN/../..'
+          cargo build --release --features cuda
+          readelf -d target/release/libsimulcast_background_removal.so
+      - name: Create Fedora RPM
+        run: |
+          cp README.md ../../frontend/data/license/gplv2.txt target/release/
+          rpmbuild -bb packaging/simulcast-background-removal.spec --define "_topdir /tmp/rpmbuild" --define "_sourcedir $PWD/target/release"
+          mkdir -p dist
+          cp /tmp/rpmbuild/RPMS/x86_64/*.rpm dist/
+          rpm -qpl dist/*.rpm
+          rpm -qpR dist/*.rpm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simulcast-background-removal-fedora44-x86_64
+          path: plugins/rust-background-removal/dist/*.rpm
+          if-no-files-found: error
