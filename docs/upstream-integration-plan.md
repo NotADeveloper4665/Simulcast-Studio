@@ -1,6 +1,33 @@
 # Upstream integration plan for Simulcast Studio
 
-Review date: 2026-11-27. This is a plan, not an upstream merge or a claim of runtime compatibility. No application code changes are included in this document's PR.
+Review date: 2026-11-27. Implementation has started with batch A below. No application runtime changes or hardware compatibility claims are included in this batch.
+
+## Implementation progress: batch A
+
+All seven selected CI fixes have been cherry-picked with `-x`, retaining upstream authorship and commit references:
+
+| Upstream PR | Upstream commit | Integration commit |
+|---|---|---|
+| #5615 | `d36dfcb7773c` | `4d1152cef` |
+| #5747 | `7e2f115eb1` | `81b480910` |
+| #5764 | `69df7dfd1d` | `c9a9ccbfc` |
+| #5778 | `8c38d3b983` | `02008e97d` |
+| #5780 | `7ca20456e7` | `703cc3ee6` |
+| #5798 | `b152594dac` | `c645af157` |
+| #5808 | `723cd1c803` | `c87c79c7e` |
+
+The source imports applied without conflicts. Upstream's bounded recovery, exact package pins, signature checks, cleanup guards, hosted behavior and code comments remain in place. No fleet routing or admission skips were imported. The AI-rebase workflow and its upstream repository guards were not changed or enabled for Simulcast.
+
+The existing policy tests exposed two pre-existing fork integration failures: the Simulcast release workflows were absent from `ci.toml`'s trigger inventory, and its release-only macOS job lacked the documented platform-plan exception. The adaptation registers the workflows' actual existing events and records a narrowly scoped GEN-002 exception with the release gating rationale. Comments explain why fork packaging must remain explicit. This changes policy metadata, not the workflow triggers, job conditions, signing or package contents.
+
+Local evidence:
+
+- RED: the imported regression tests against the pre-import implementations at `d1d0d411` ran 118 tests and reported 10 failures and 6 errors; original files were restored afterward. This reproduces missing queue reporting/recovery, apt recovery, timeout and safe rebase-read behavior.
+- GREEN: 241 focused tests passed across Tier 2 packages/cache/recovery, reporting, timeouts, rebase cooperation and backpressure. The command used `PYTHONPATH=ci uv run --offline --no-project python -m unittest` with the 14 relevant modules.
+- Policy/gate suite: 209 tests passed across `test_ci_toml`, `test_gate_jobs`, `test_merge_queue`, `test_pr_attestation`, `test_ci_scope`, `test_ai_rebase_workflow_shape` and `test_workflow_schedule_guard`. This overlaps the focused suite; do not sum the counts as unique tests.
+- `bash -n rust/tools/linux-validate/validate.sh` and `git diff --check` passed.
+
+These are local mocked/script and policy tests, not a live apt-container recovery, full compiler build, package or hardware result. GitHub Actions must verify the published head. Existing unrelated frontend/Rust baseline failures remain separate; neither their tests nor required gates were weakened. Batches B–E remain unimplemented. Revert the integration commits in reverse order and the accompanying fork-policy adaptation to roll back batch A.
 
 ## Verified baseline and scope
 
@@ -137,7 +164,7 @@ Keep each integration PR independently revertable and leave master/alpha untouch
 
 ## Complete merged-backlog ledger
 
-Batch keys: A portable CI; B source/frame ports; C scene/filter/clone lifecycle; D audio; E conditional infrastructure/packaging. Classification is a proposal; none of these commits is imported by this document.
+Batch keys: A portable CI; B source/frame ports; C scene/filter/clone lifecycle; D audio; E conditional infrastructure/packaging. Batch A is imported on this PR's branch as recorded above; B–E remain proposals. No batch is claimed merged into master.
 
 | Upstream PR | Commit | Change | Batch |
 |---|---|---|---|
