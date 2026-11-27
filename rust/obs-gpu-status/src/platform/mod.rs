@@ -3,6 +3,7 @@
 
 use crate::nvml::Nvml;
 use crate::{GpuDevice, Utilization};
+#[cfg(target_os = "linux")]
 use std::time::Instant;
 
 #[allow(unsafe_code)] // libloading; see the module docs
