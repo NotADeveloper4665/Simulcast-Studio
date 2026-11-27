@@ -204,7 +204,7 @@ class CommittedDataTest(unittest.TestCase):
     def test_readme_matches_the_data_file(self):
         readme = uq.README.read_text()
         self.assertEqual(uq.render(readme, self.data), readme,
-                         "README.md is stale: run uv run tools/user_quotes.py render")
+                         "README.obs-rust.md is stale: run uv run tools/user_quotes.py render")
 
     def test_data_file_is_canonical(self):
         self.assertEqual(uq.dump(self.data), self.text, "rewrite it with tools/user_quotes.py")

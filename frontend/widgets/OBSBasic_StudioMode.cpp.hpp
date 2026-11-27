@@ -229,7 +229,7 @@ void OBSBasic::SetPreviewProgramMode(bool enabled)
 
 		ui->previewLayout->addWidget(programOptions);
 		ui->previewLayout->addWidget(programWidget,
-					    verticalPreviewPanel && !verticalPreviewPanel->isHidden() ? 2 : 0);
+					     verticalPreviewPanel && !verticalPreviewPanel->isHidden() ? 2 : 0);
 		ui->previewLayout->setAlignment(programOptions, Qt::AlignCenter);
 
 		sizeObserver = new PreviewProgramSizeObserver(ui->preview, program, this);

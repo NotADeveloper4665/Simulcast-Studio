@@ -3374,7 +3374,12 @@ jobs:
         run: |
           case "${OBS_TIER2_TEST_BUILD:-}" in
             "${OBS_TIER2_SCRATCH:-/nonexistent}"/tier2.*)
+              scratch_name=${OBS_TIER2_TEST_BUILD##*/}
+              [[ "$OBS_TIER2_TEST_BUILD" == "$OBS_TIER2_SCRATCH/$scratch_name" ]]
+              [[ -d "$OBS_TIER2_TEST_BUILD" && ! -L "$OBS_TIER2_TEST_BUILD" ]] || exit 0
               df -h "$OBS_TIER2_TEST_BUILD"
+              # CTest creates directories as root inside the jobs container.
+              sudo -n chown -hR -- "$(id -u):$(id -g)" "$OBS_TIER2_TEST_BUILD"
               uv run --no-project python -c 'import shutil, sys; shutil.rmtree(sys.argv[1])' "$OBS_TIER2_TEST_BUILD"
               ;;
           esac
@@ -3771,8 +3776,8 @@ jobs:
   # Use the job GITHUB_TOKEN: its release/tag writes do not recursively trigger
   # product workflows. No PAT, Actions artifact cache transport or PR writer.
   rust-tier2-windows:
-    # 2x the 10-15 min the lane runs; bounds a dead runner at 25 (#2593 A).
-    timeout-minutes: 25
+    # 2x the 15-24.5 min the lane runs; 25 cancelled passing merge groups (#5608).
+    timeout-minutes: 40
     name: Rust Tier 2 (windows-2025-vs2026)
     runs-on: windows-2025-vs2026
     # Starts with Fast Gate (#2985), like the other platform lanes.

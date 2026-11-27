@@ -37,7 +37,7 @@ def block(text: str) -> str:
 
 class ReadmeWorkerPromptTest(unittest.TestCase):
     def setUp(self):
-        self.readme = (ROOT / "README.md").read_text()
+        self.readme = (ROOT / "README.obs-rust.md").read_text()
         self.prompt = block(self.readme)
 
     def test_readme_offers_the_prompt_near_the_top(self):

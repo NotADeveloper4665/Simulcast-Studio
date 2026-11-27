@@ -342,7 +342,8 @@ bool InitializeAppIdentity()
 
 void SetApplicationIcon()
 {
-	QApplication::setWindowIcon(QIcon::fromTheme("io.github.notadeveloper4665.SimulcastStudio", QIcon(":/res/images/obs.png")));
+	QApplication::setWindowIcon(
+		QIcon::fromTheme("io.github.notadeveloper4665.SimulcastStudio", QIcon(":/res/images/obs.png")));
 }
 
 void InitPlatformDisplay()
@@ -751,7 +752,8 @@ void ApplyPlatformPreviewTextOutline(obs_data_t *settings)
 
 void SetPlatformWidgetIcon(QWidget *widget)
 {
-	widget->setWindowIcon(QIcon::fromTheme("io.github.notadeveloper4665.SimulcastStudio", QIcon(":/res/images/obs.png")));
+	widget->setWindowIcon(
+		QIcon::fromTheme("io.github.notadeveloper4665.SimulcastStudio", QIcon(":/res/images/obs.png")));
 }
 
 void ConfigurePlatformProjectorWindow(QWidget *widget)

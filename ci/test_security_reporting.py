@@ -38,8 +38,10 @@ class SecurityReportingTests(unittest.TestCase):
 
     def test_issue_config_has_advisory_link(self) -> None:
         config = read(".github/ISSUE_TEMPLATE/config.yml")
-        self.assertIn("name: Report a vulnerability", config)
-        self.assertIn(f"url: {ADVISORY_URL}", config)
+        self.assertIn("name: Report a security vulnerability", config)
+        self.assertIn(
+            "url: https://github.com/NotADeveloper4665/Simulcast-Studio/security/advisories/new", config
+        )
 
 
 if __name__ == "__main__":

@@ -1389,8 +1389,9 @@ retryScene:
 	}
 
 	SetCurrentScene(curScene.Get(), true);
-	if (GetVerticalCanvas())
+	if (GetVerticalCanvas()) {
 		GetVerticalScene(true);
+	}
 
 	if (!curProgramScene) {
 		curProgramScene = std::move(curScene);

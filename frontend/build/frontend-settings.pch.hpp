@@ -5,6 +5,14 @@
 
 #pragma once
 
+/* Dependencies used by the Simulcast controls in this unity group. */
+#include <QFileDialog>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QListWidget>
+#include <QSignalBlocker>
+#include <QUrl>
+
 /* settings/OBSBasicSettings.cpp */
 #include "frontend/settings/OBSBasicSettings.hpp"
 #include "frontend/settings/OBSHotkeyBackgroundBanner.hpp"

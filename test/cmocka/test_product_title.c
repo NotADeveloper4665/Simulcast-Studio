@@ -58,7 +58,7 @@ static void truncates_and_terminates(void **state)
 	char buf[8];
 
 	assert_int_equal(obs_product_title(buf, sizeof(buf), "0.3.0", NULL), (int)strlen("Simulcast Studio 0.3.0"));
-	assert_string_equal(buf, "OBS Stu");
+	assert_string_equal(buf, "Simulca");
 	assert_int_equal(obs_product_title(NULL, 0, "0.3.0", NULL), (int)strlen("Simulcast Studio 0.3.0"));
 }
 

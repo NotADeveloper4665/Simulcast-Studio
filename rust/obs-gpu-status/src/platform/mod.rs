@@ -3,6 +3,7 @@
 
 use crate::nvml::Nvml;
 use crate::{GpuDevice, Utilization};
+#[cfg(target_os = "linux")]
 use std::time::Instant;
 
 #[allow(unsafe_code)] // libloading; see the module docs
@@ -111,7 +112,10 @@ impl crate::usage::UsageSource for DrmFdinfoSource {
             self.sampled_at = Some(now);
             return Utilization::Unavailable;
         };
-        let elapsed = now.saturating_duration_since(sampled_at).as_nanos().min(u64::MAX as u128) as u64;
+        let elapsed = now
+            .saturating_duration_since(sampled_at)
+            .as_nanos()
+            .min(u64::MAX as u128) as u64;
         let utilization = crate::fdinfo::fdinfo_utilization(&self.previous, &current, pci, elapsed);
         self.previous = current;
         self.sampled_at = Some(now);

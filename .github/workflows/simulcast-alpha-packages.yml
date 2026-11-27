@@ -55,7 +55,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - run: |
-          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3 patchelf squashfs-tools pulseaudio-utils pipewire qt6-qtsvg qt6-qtwayland
+          dnf -y install git ca-certificates dnf5-plugins cmake ninja-build extra-cmake-modules clang gcc gcc-c++ curl rpm-build pkgconf-pkg-config findutils which tar gzip xz patch python3 uv patchelf squashfs-tools pulseaudio-utils pipewire qt6-qtsvg qt6-qtwayland
           dnf -y install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-44.noarch.rpm
           dnf -y builddep obs-studio
           dnf -y install x264-devel
@@ -77,7 +77,7 @@ jobs:
           cmake --preset fedora -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF -DOBS_VERSION_OVERRIDE=33.0.0 -DOBS_RUST_VERSION=0.1.0
           cmake --build build_fedora --parallel 4
           DESTDIR="$PWD/Simulcast.AppDir" cmake --install build_fedora --strip
-          QT_QPA_PLATFORM=offscreen python3 build-aux/appimage/assemble_fedora_appdir.py Simulcast.AppDir
+          QT_QPA_PLATFORM=offscreen uv run --no-project --script build-aux/appimage/assemble_fedora_appdir.py Simulcast.AppDir
           curl -fsSL https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o appimagetool
           echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool' | sha256sum -c -
           chmod +x appimagetool

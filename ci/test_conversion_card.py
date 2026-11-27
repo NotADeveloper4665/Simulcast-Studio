@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-README = ROOT / "README.md"
+README = ROOT / "README.obs-rust.md"
 WORKFLOW = ROOT / ".github" / "workflows" / "leaderboard.yml"
 SITE = ROOT / "tools" / "leaderboard" / "site"
 RENDER = ROOT / "tools" / "leaderboard" / "render.py"

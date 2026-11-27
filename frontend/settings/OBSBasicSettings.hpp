@@ -159,8 +159,9 @@ private:
 
 	inline bool Changed() const
 	{
-		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged || multiStreamChanged || stream1Changed || audioChanged ||
-		       videoChanged || advancedChanged || hotkeysChanged || a11yChanged;
+		return generalChanged || appearanceChanged || outputsChanged || dualFoldersChanged ||
+		       multiStreamChanged || stream1Changed || audioChanged || videoChanged || advancedChanged ||
+		       hotkeysChanged || a11yChanged;
 	}
 
 	inline void EnableApplyButton(bool en) { ui->buttonBox->button(QDialogButtonBox::Apply)->setEnabled(en); }

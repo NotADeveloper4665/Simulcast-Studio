@@ -145,16 +145,19 @@ void OBSBasicPreview::SetPortraitScene(OBSScene scene)
 	OBSScene previous;
 	{
 		std::lock_guard<std::mutex> lock(portraitSceneMutex);
-		if (portraitEditingScene.Get() == scene.Get())
+		if (portraitEditingScene.Get() == scene.Get()) {
 			return;
+		}
 		previous = std::move(portraitEditingScene);
 		portraitEditingScene = scene;
 	}
 	// Never call into libobs while holding the renderer's scene mutex.
-	if (scene)
+	if (scene) {
 		obs_source_inc_showing(obs_scene_get_source(scene));
-	if (previous)
+	}
+	if (previous) {
 		obs_source_dec_showing(obs_scene_get_source(previous));
+	}
 }
 
 void OBSBasicPreview::ResetEditingState()

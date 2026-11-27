@@ -1834,10 +1834,12 @@ void OBSBasic::closeWindow()
 	 * To avoid such a case, destroy displays earlier than others such as
 	 * deleting browser docks. */
 	ui->preview->DestroyDisplay();
-	if (verticalPreview)
+	if (verticalPreview) {
 		verticalPreview->DestroyDisplay();
-	if (verticalProgramDisplay)
+	}
+	if (verticalProgramDisplay) {
 		verticalProgramDisplay->DestroyDisplay();
+	}
 	if (program) {
 		program->DestroyDisplay();
 	}

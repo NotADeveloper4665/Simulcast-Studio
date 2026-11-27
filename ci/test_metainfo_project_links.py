@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --script
-"""The Rust build's AppStream metainfo and .deb name obs-rust as developer,
+"""The Rust build's AppStream metainfo and .deb name Simulcast Studio as developer,
 homepage, bug tracker and source (#2302), so software centres send reports
 about this build to this project. The upstream brand keeps upstream's links.
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "frontend/cmake/linux/com.obsproject.Studio.metainfo.xml.in"
-RUST = "https://github.com/obs-rust/obs-studio"
+SIMULCAST = "https://github.com/NotADeveloper4665/Simulcast-Studio"
 
 
 def configure(brand: bool) -> ET.Element:
@@ -37,19 +37,19 @@ def urls(root: ET.Element) -> dict[str, str]:
 
 
 class MetainfoProjectLinksTest(unittest.TestCase):
-    def test_rust_brand_links_to_obs_rust(self):
+    def test_rust_brand_links_to_simulcast(self):
         root = configure(True)
         got = urls(root)
-        self.assertEqual(got["homepage"], RUST)
-        self.assertEqual(got["bugtracker"], f"{RUST}/issues")
-        self.assertEqual(got["vcs-browser"], RUST)
+        self.assertEqual(got["homepage"], SIMULCAST)
+        self.assertEqual(got["bugtracker"], f"{SIMULCAST}/issues")
+        self.assertEqual(got["vcs-browser"], SIMULCAST)
         developer = root.find("developer")
-        self.assertEqual(developer.get("id"), "io.github.obs_rust")
-        self.assertEqual(developer.findtext("name"), "obs-rust")
+        self.assertEqual(developer.get("id"), "io.github.notadeveloper4665")
+        self.assertEqual(developer.findtext("name"), "Simulcast Studio contributors")
 
     def test_flathub_manifest_link_names_this_repository(self):
         # GIT_HASH is this repository's commit; upstream has no such blob.
-        for brand, repo in ((True, RUST), (False, "https://github.com/obsproject/obs-studio")):
+        for brand, repo in ((True, SIMULCAST), (False, "https://github.com/obsproject/obs-studio")):
             with self.subTest(brand=brand):
                 value = configure(brand).find("custom/value[@key='flathub::manifest']").text
                 self.assertTrue(value.startswith(f"{repo}/blob/"), value)
@@ -61,7 +61,7 @@ class MetainfoProjectLinksTest(unittest.TestCase):
         self.assertEqual(got["bugtracker"], "https://github.com/obsproject/obs-studio/issues")
         self.assertEqual(root.find("developer").get("id"), "com.obsproject")
 
-    def test_deb_names_obs_rust(self):
+    def test_deb_uses_the_selected_project_identity(self):
         cpack = (ROOT / "cmake/linux/cpackconfig.cmake").read_text()
         self.assertIn("CPACK_DEBIAN_PACKAGE_HOMEPAGE", cpack)
         self.assertIn("OBS_PROJECT_HOMEPAGE", cpack)

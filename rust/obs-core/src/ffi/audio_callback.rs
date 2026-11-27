@@ -801,7 +801,8 @@ pub unsafe extern "C" fn audio_callback(
 ) -> bool {
     let _ = param;
     // SAFETY: the caller's contract.
-    let mixed = unsafe { audio_callback_with::<Libobs>(start_ts_in, end_ts_in, out_ts, mixers, mixes) };
+    let mixed =
+        unsafe { audio_callback_with::<Libobs>(start_ts_in, end_ts_in, out_ts, mixers, mixes) };
     let percent = MASTER_VOLUME_PERCENT.load(Ordering::Relaxed);
     if mixed && percent < 100 {
         let gain = percent as f32 / 100.0;

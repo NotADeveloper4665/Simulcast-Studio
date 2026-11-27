@@ -15,28 +15,6 @@
 
 #include "frontend/build/frontend-widgets.pch.hpp"
 
-#include <QDateTime>
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QKeySequence>
-#include <QAction>
-#include <QToolBar>
-#include <QInputDialog>
-#include <QAbstractItemModel>
-#include <QMouseEvent>
-#include <QStyle>
-#include <QDropEvent>
-#include <QStyledItemDelegate>
-#include <QStyleOptionViewItem>
-#include <QPainter>
-#include <utility/display-helpers.hpp>
-#include <functional>
-#include <QDir>
-#include <QFileInfo>
-#include <QStandardPaths>
-#include <limits>
-
 namespace {
 constexpr char VerticalCanvasName[] = "Dual Stream Vertical";
 constexpr char VerticalSceneName[] = "Vertical Program";
@@ -51,8 +29,7 @@ class PortraitSourceDelegate : public QStyledItemDelegate {
 public:
 	using QStyledItemDelegate::QStyledItemDelegate;
 
-	void paint(QPainter *painter, const QStyleOptionViewItem &option,
-		   const QModelIndex &index) const override
+	void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
 	{
 		QStyleOptionViewItem background(option);
 		initStyleOption(&background, index);
@@ -74,26 +51,33 @@ protected:
 	void dropEvent(QDropEvent *event) override
 	{
 		QListWidget::dropEvent(event);
-		if (event->isAccepted() && orderChanged)
+		if (event->isAccepted() && orderChanged) {
 			orderChanged();
+		}
 	}
 };
 
 int HardwareEncoderPriority(const char *id)
 {
-	if (!id)
+	if (!id) {
 		return -1;
+	}
 	const QString encoder = QString::fromUtf8(id).toLower();
-	if (encoder.contains(QStringLiteral("nvenc")))
+	if (encoder.contains(QStringLiteral("nvenc"))) {
 		return 0;
-	if (encoder.contains(QStringLiteral("vaapi")))
+	}
+	if (encoder.contains(QStringLiteral("vaapi"))) {
 		return 1;
-	if (encoder.contains(QStringLiteral("qsv")))
+	}
+	if (encoder.contains(QStringLiteral("qsv"))) {
 		return 2;
-	if (encoder.contains(QStringLiteral("amf")))
+	}
+	if (encoder.contains(QStringLiteral("amf"))) {
 		return 3;
-	if (encoder.contains(QStringLiteral("videotoolbox")))
+	}
+	if (encoder.contains(QStringLiteral("videotoolbox"))) {
 		return 4;
+	}
 	return -1;
 }
 
@@ -105,8 +89,8 @@ QString AvailableH264HardwareEncoder()
 	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
 		const char *codec = obs_get_encoder_codec(id);
 		const int priority = HardwareEncoderPriority(id);
-		if (obs_get_encoder_type(id) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0 && priority >= 0 &&
-		    priority < bestPriority) {
+		if (obs_get_encoder_type(id) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0 &&
+		    priority >= 0 && priority < bestPriority) {
 			best = QString::fromUtf8(id);
 			bestPriority = priority;
 		}
@@ -117,19 +101,23 @@ QString AvailableH264HardwareEncoder()
 QString PreferredH264Encoder()
 {
 	const QString hardware = AvailableH264HardwareEncoder();
-	if (!hardware.isEmpty())
+	if (!hardware.isEmpty()) {
 		return hardware;
+	}
 	QString firstAvailable;
 	const char *id = nullptr;
 	for (size_t index = 0; obs_enum_encoder_types(index, &id); ++index) {
 		const char *codec = obs_get_encoder_codec(id);
-		if (obs_get_encoder_type(id) != OBS_ENCODER_VIDEO || !codec || strcmp(codec, "h264") != 0)
+		if (obs_get_encoder_type(id) != OBS_ENCODER_VIDEO || !codec || strcmp(codec, "h264") != 0) {
 			continue;
+		}
 		const QString encoderId = QString::fromUtf8(id);
-		if (firstAvailable.isEmpty())
+		if (firstAvailable.isEmpty()) {
 			firstAvailable = encoderId;
-		if (encoderId == QStringLiteral("obs_x264"))
+		}
+		if (encoderId == QStringLiteral("obs_x264")) {
 			return encoderId;
+		}
 	}
 	return firstAvailable;
 }
@@ -195,8 +183,9 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 
 	if (create) {
 		InitVerticalCanvasVideo();
-		if (!obs_canvas_has_video(canvas))
+		if (!obs_canvas_has_video(canvas)) {
 			return {};
+		}
 	}
 	OBSScene scene;
 	// Resolve the selected UUID only inside the portrait canvas.
@@ -205,19 +194,24 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 		OBSScene selected;
 		OBSScene first;
 	} selection{verticalSceneUuid, {}, {}};
-	obs_canvas_enum_scenes(canvas, [](void *data, obs_source_t *source) {
-		auto &state = *static_cast<Selection *>(data);
-		if (!obs_source_is_scene(source))
+	obs_canvas_enum_scenes(
+		canvas,
+		[](void *data, obs_source_t *source) {
+			auto &state = *static_cast<Selection *>(data);
+			if (!obs_source_is_scene(source)) {
+				return true;
+			}
+			OBSScene candidate(obs_scene_from_source(source));
+			if (!state.first) {
+				state.first = candidate;
+			}
+			if (QString::fromUtf8(obs_source_get_uuid(source)) == state.uuid) {
+				state.selected = candidate;
+				return false;
+			}
 			return true;
-		OBSScene candidate(obs_scene_from_source(source));
-		if (!state.first)
-			state.first = candidate;
-		if (QString::fromUtf8(obs_source_get_uuid(source)) == state.uuid) {
-			state.selected = candidate;
-			return false;
-		}
-		return true;
-	}, &selection);
+		},
+		&selection);
 	scene = selection.selected ? selection.selected : selection.first;
 	if (!scene && create) {
 		OBSSceneAutoRelease created = obs_canvas_scene_create(canvas, VerticalSceneName);
@@ -225,8 +219,9 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 	}
 	if (scene && create) {
 		verticalSceneUuid = QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(scene)));
-		if (verticalPreview && verticalPreviewPanel && !verticalPreviewPanel->isHidden())
+		if (verticalPreview && verticalPreviewPanel && !verticalPreviewPanel->isHidden()) {
 			verticalPreview->SetPortraitScene(scene);
+		}
 		if (IsPreviewProgramMode()) {
 			OBSSourceAutoRelease channel = obs_canvas_get_channel(canvas, 0);
 			if (!verticalStudioProgramReady || !channel) {
@@ -235,8 +230,9 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 			}
 		} else {
 			OBSSourceAutoRelease channel = obs_canvas_get_channel(canvas, 0);
-			if (channel.Get() != obs_scene_get_source(scene))
+			if (channel.Get() != obs_scene_get_source(scene)) {
 				obs_canvas_set_channel(canvas, 0, obs_scene_get_source(scene));
+			}
 			verticalProgramUuid = verticalSceneUuid;
 			verticalStudioProgramReady = false;
 		}
@@ -246,35 +242,43 @@ OBSScene OBSBasic::GetVerticalScene(bool create)
 
 OBSScene OBSBasic::FindVerticalScene(const QString &uuid) const
 {
-	if (uuid.isEmpty())
+	if (uuid.isEmpty()) {
 		return {};
+	}
 	auto *canvas = GetVerticalCanvas();
-	if (!canvas)
+	if (!canvas) {
 		return {};
+	}
 	struct Lookup {
 		QString uuid;
 		OBSScene scene;
 	} lookup{uuid, {}};
-	obs_canvas_enum_scenes(canvas, [](void *data, obs_source_t *source) {
-		auto &result = *static_cast<Lookup *>(data);
-		if (obs_source_is_scene(source) && QString::fromUtf8(obs_source_get_uuid(source)) == result.uuid) {
-			result.scene = OBSScene(obs_scene_from_source(source));
-			return false;
-		}
-		return true;
-	}, &lookup);
+	obs_canvas_enum_scenes(
+		canvas,
+		[](void *data, obs_source_t *source) {
+			auto &result = *static_cast<Lookup *>(data);
+			if (obs_source_is_scene(source) &&
+			    QString::fromUtf8(obs_source_get_uuid(source)) == result.uuid) {
+				result.scene = OBSScene(obs_scene_from_source(source));
+				return false;
+			}
+			return true;
+		},
+		&lookup);
 	return lookup.scene;
 }
 
 bool OBSBasic::CommitVerticalProgram(OBSScene scene)
 {
 	auto *canvas = GetVerticalCanvas();
-	if (!canvas || !scene || !obs_canvas_has_video(canvas))
+	if (!canvas || !scene || !obs_canvas_has_video(canvas)) {
 		return false;
+	}
 	// Freeze scene-item layout in a private copy, as horizontal Studio Mode
 	// does with scene duplication enabled. Source references remain shared.
 	const auto *source = obs_scene_get_source(scene);
-	OBSSceneAutoRelease snapshot = obs_scene_duplicate(scene, obs_source_get_name(source), OBS_SCENE_DUP_PRIVATE_REFS);
+	OBSSceneAutoRelease snapshot =
+		obs_scene_duplicate(scene, obs_source_get_name(source), OBS_SCENE_DUP_PRIVATE_REFS);
 	if (!snapshot) {
 		blog(LOG_WARNING, "Simulcast: unable to duplicate vertical program scene");
 		return false;
@@ -288,11 +292,13 @@ bool OBSBasic::CommitVerticalProgram(OBSScene scene)
 
 void OBSBasic::TransitionVertical()
 {
-	if (!IsPreviewProgramMode())
+	if (!IsPreviewProgramMode()) {
 		return;
+	}
 	auto scene = GetVerticalScene(true);
-	if (scene && CommitVerticalProgram(scene))
+	if (scene && CommitVerticalProgram(scene)) {
 		SaveProject();
+	}
 }
 
 void OBSBasic::SetVerticalStudioMode(bool enabled)
@@ -307,10 +313,12 @@ void OBSBasic::SetVerticalStudioMode(bool enabled)
 		GetVerticalScene(true);
 	} else {
 		// Return to the actual program scene, not an uncommitted preview.
-		if (FindVerticalScene(verticalProgramUuid))
+		if (FindVerticalScene(verticalProgramUuid)) {
 			verticalSceneUuid = verticalProgramUuid;
-		if (verticalPreview)
+		}
+		if (verticalPreview) {
 			verticalPreview->ResetEditingState();
+		}
 		verticalStudioProgramReady = false;
 		GetVerticalScene(true);
 		verticalLayersFingerprint.clear();
@@ -322,16 +330,20 @@ void OBSBasic::SetVerticalStudioMode(bool enabled)
 
 void OBSBasic::UpdateVerticalStudioUI()
 {
-	if (!verticalPreviewPanel || !verticalProgramPanel)
+	if (!verticalPreviewPanel || !verticalProgramPanel) {
 		return;
+	}
 	const bool studio = IsPreviewProgramMode();
 	verticalProgramPanel->setVisible(studio);
 	verticalTransitionButton->setVisible(studio);
 	const auto preview = FindVerticalScene(verticalSceneUuid);
 	const auto program = FindVerticalScene(verticalProgramUuid);
-	const QString previewName = preview ? QString::fromUtf8(obs_source_get_name(obs_scene_get_source(preview))) : QString();
-	const QString programName = program ? QString::fromUtf8(obs_source_get_name(obs_scene_get_source(program))) : QString();
-	verticalPreviewTitle->setText(studio ? tr("Vertical Preview: %1").arg(previewName) : tr("Vertical Preview (9:16)"));
+	const QString previewName = preview ? QString::fromUtf8(obs_source_get_name(obs_scene_get_source(preview)))
+					    : QString();
+	const QString programName = program ? QString::fromUtf8(obs_source_get_name(obs_scene_get_source(program)))
+					    : QString();
+	verticalPreviewTitle->setText(studio ? tr("Vertical Preview: %1").arg(previewName)
+					     : tr("Vertical Preview (9:16)"));
 	verticalProgramTitle->setText(tr("Vertical Program: %1").arg(programName));
 	verticalTransitionButton->setEnabled(studio && !!preview);
 	ui->previewLayout->setStretchFactor(verticalPreviewPanel, studio ? 2 : 1);
@@ -343,8 +355,9 @@ void OBSBasic::ClearVerticalStudioState()
 		verticalPreview->ResetEditingState();
 		verticalPreview->SetPortraitScene({});
 	}
-	if (auto *canvas = GetVerticalCanvas())
+	if (auto *canvas = GetVerticalCanvas()) {
 		obs_canvas_set_channel(canvas, 0, nullptr);
+	}
 	verticalStudioProgramReady = false;
 	verticalProgramUuid.clear();
 	verticalSceneUuid.clear();
@@ -354,35 +367,44 @@ void OBSBasic::ClearVerticalStudioState()
 
 void OBSBasic::RefreshVerticalScenes()
 {
-	if (!verticalScenes)
+	if (!verticalScenes) {
 		return;
+	}
 	QHash<QString, QString> names;
 	QStringList discovered;
 	if (auto *canvas = GetVerticalCanvas()) {
 		using SceneList = std::pair<QHash<QString, QString> *, QStringList *>;
 		SceneList data{&names, &discovered};
-		obs_canvas_enum_scenes(canvas, [](void *param, obs_source_t *source) {
-			if (obs_source_is_scene(source)) {
-				auto &out = *static_cast<SceneList *>(param);
-				const QString uuid = QString::fromUtf8(obs_source_get_uuid(source));
-				out.first->insert(uuid, QString::fromUtf8(obs_source_get_name(source)));
-				out.second->append(uuid);
-			}
-			return true;
-		}, &data);
+		obs_canvas_enum_scenes(
+			canvas,
+			[](void *param, obs_source_t *source) {
+				if (obs_source_is_scene(source)) {
+					auto &out = *static_cast<SceneList *>(param);
+					const QString uuid = QString::fromUtf8(obs_source_get_uuid(source));
+					out.first->insert(uuid, QString::fromUtf8(obs_source_get_name(source)));
+					out.second->append(uuid);
+				}
+				return true;
+			},
+			&data);
 	}
 	QStringList order;
-	for (const auto &uuid : verticalSceneOrder)
-		if (names.contains(uuid) && !order.contains(uuid))
+	for (const auto &uuid : verticalSceneOrder) {
+		if (names.contains(uuid) && !order.contains(uuid)) {
 			order.append(uuid);
-	for (const auto &uuid : discovered)
-		if (!order.contains(uuid))
+		}
+	}
+	for (const auto &uuid : discovered) {
+		if (!order.contains(uuid)) {
 			order.append(uuid);
+		}
+	}
 	verticalSceneOrder = order;
 	bool same = verticalScenes->count() == order.size();
-	for (int i = 0; same && i < verticalScenes->count(); ++i)
+	for (int i = 0; same && i < verticalScenes->count(); ++i) {
 		same = verticalScenes->item(i)->data(Qt::UserRole).toString() == order[i] &&
 		       verticalScenes->item(i)->text() == names.value(order[i]);
+	}
 	const QSignalBlocker block(verticalScenes);
 	if (!same) {
 		verticalScenes->clear();
@@ -391,22 +413,27 @@ void OBSBasic::RefreshVerticalScenes()
 			entry->setData(Qt::UserRole, uuid);
 		}
 	}
-	const int index = order.indexOf(verticalSceneUuid);
-	if (index >= 0 && verticalScenes->currentRow() != index)
-		verticalScenes->setCurrentRow(index);
+	const auto index = order.indexOf(verticalSceneUuid);
+	if (index >= 0 && index < verticalScenes->count() && verticalScenes->currentRow() != index) {
+		verticalScenes->setCurrentRow(static_cast<int>(index));
+	}
 	UpdateVerticalStudioUI();
 }
 
 void OBSBasic::SelectVerticalScene(const QString &uuid)
 {
-	if (uuid.isEmpty() || uuid == verticalSceneUuid)
+	if (uuid.isEmpty() || uuid == verticalSceneUuid) {
 		return;
-	if (verticalPreview)
+	}
+	if (verticalPreview) {
 		verticalPreview->ResetEditingState();
-	if (addWindow)
+	}
+	if (addWindow) {
 		addWindow->close();
-	if (transformWindow)
+	}
+	if (transformWindow) {
 		transformWindow->close();
+	}
 	verticalSceneUuid = uuid;
 	GetVerticalScene(true);
 	verticalLayersFingerprint.clear();
@@ -417,25 +444,40 @@ void OBSBasic::SelectVerticalScene(const QString &uuid)
 
 void OBSBasic::RefreshVerticalLayers()
 {
-	if (!verticalLayers)
+	if (!verticalLayers) {
 		return;
-	struct Row { qlonglong id; QString name; QString type; bool visible; bool locked; bool selected; };
+	}
+	struct Row {
+		qlonglong id;
+		QString name;
+		QString type;
+		bool visible;
+		bool locked;
+		bool selected;
+	};
 	QList<Row> rows;
 	auto scene = GetVerticalScene(false);
 	if (scene) {
-		obs_scene_enum_items(scene, [](obs_scene_t *, obs_sceneitem_t *layer, void *data) {
-			auto *list = static_cast<QList<Row> *>(data);
-			auto *source = obs_sceneitem_get_source(layer);
-			list->prepend(Row{static_cast<qlonglong>(obs_sceneitem_get_id(layer)),
-				QString::fromUtf8(obs_source_get_name(source)), QString::fromUtf8(obs_source_get_id(source)),
-				obs_sceneitem_visible(layer), obs_sceneitem_locked(layer), obs_sceneitem_selected(layer)});
-			return true;
-		}, &rows);
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *layer, void *data) {
+				auto *list = static_cast<QList<Row> *>(data);
+				auto *source = obs_sceneitem_get_source(layer);
+				list->prepend(Row{static_cast<qlonglong>(obs_sceneitem_get_id(layer)),
+						  QString::fromUtf8(obs_source_get_name(source)),
+						  QString::fromUtf8(obs_source_get_id(source)),
+						  obs_sceneitem_visible(layer), obs_sceneitem_locked(layer),
+						  obs_sceneitem_selected(layer)});
+				return true;
+			},
+			&rows);
 	}
 	QJsonArray signature;
-	for (const auto &row : rows)
+	for (const auto &row : rows) {
 		signature.append(QJsonArray{QString::number(row.id), row.name, row.type, row.visible, row.locked});
-	const QString fingerprint = verticalSceneUuid + QString::fromUtf8(QJsonDocument(signature).toJson(QJsonDocument::Compact));
+	}
+	const QString fingerprint =
+		verticalSceneUuid + QString::fromUtf8(QJsonDocument(signature).toJson(QJsonDocument::Compact));
 	const QSignalBlocker block(verticalLayers);
 	if (fingerprint != verticalLayersFingerprint) {
 		verticalLayersFingerprint = fingerprint;
@@ -446,8 +488,10 @@ void OBSBasic::RefreshVerticalLayers()
 			auto *entry = new QListWidgetItem(verticalLayers);
 			entry->setData(Qt::UserRole, row.id);
 			entry->setText(row.name);
-			const auto icon = row.type == QStringLiteral("scene") ? GetSceneIcon() :
-				row.type == QStringLiteral("group") ? GetGroupIcon() : GetSourceIcon(row.type.toUtf8().constData());
+			const auto icon = row.type == QStringLiteral("scene") ? GetSceneIcon()
+					  : row.type == QStringLiteral("group")
+						  ? GetGroupIcon()
+						  : GetSourceIcon(row.type.toUtf8().constData());
 			auto *widget = new QWidget(verticalLayers);
 			widget->setAttribute(Qt::WA_TranslucentBackground);
 			widget->setAutoFillBackground(false);
@@ -487,36 +531,43 @@ void OBSBasic::RefreshVerticalLayers()
 			layout->addWidget(locked);
 			const auto uuid = verticalSceneUuid;
 			connect(visible, &QCheckBox::toggled, this, [this, uuid, id = row.id](bool checked) {
-				if (uuid != verticalSceneUuid)
+				if (uuid != verticalSceneUuid) {
 					return;
+				}
 				auto scene = GetVerticalScene(false);
-				if (scene)
+				if (scene) {
 					if (auto *item = obs_scene_find_sceneitem_by_id(scene, id)) {
 						obs_sceneitem_set_visible(item, checked);
 						SaveProject();
 					}
+				}
 			});
 			connect(locked, &QCheckBox::toggled, this, [this, uuid, id = row.id](bool checked) {
-				if (uuid != verticalSceneUuid)
+				if (uuid != verticalSceneUuid) {
 					return;
+				}
 				auto scene = GetVerticalScene(false);
-				if (scene)
+				if (scene) {
 					if (auto *item = obs_scene_find_sceneitem_by_id(scene, id)) {
 						obs_sceneitem_set_locked(item, checked);
 						SaveProject();
 					}
+				}
 			});
 			entry->setSizeHint(QSize(0, std::max(24, widget->sizeHint().height())));
 			verticalLayers->setItemWidget(entry, widget);
-			if (row.id == previous)
+			if (row.id == previous) {
 				verticalLayers->setCurrentItem(entry, QItemSelectionModel::NoUpdate);
+			}
 		}
 	}
-	for (int i = 0; i < verticalLayers->count() && i < rows.size(); ++i)
+	for (int i = 0; i < verticalLayers->count() && i < rows.size(); ++i) {
 		verticalLayers->item(i)->setSelected(rows[i].selected);
+	}
 	const auto selected = verticalLayers->selectedItems();
-	if (!selected.isEmpty() && (!verticalLayers->currentItem() || !verticalLayers->currentItem()->isSelected()))
+	if (!selected.isEmpty() && (!verticalLayers->currentItem() || !verticalLayers->currentItem()->isSelected())) {
 		verticalLayers->setCurrentItem(selected.front(), QItemSelectionModel::NoUpdate);
+	}
 }
 
 void OBSBasic::AddVerticalLayer()
@@ -537,13 +588,16 @@ void OBSBasic::EditVerticalLayer()
 {
 	const auto *selected = verticalLayers->currentItem();
 	auto scene = GetVerticalScene(false);
-	if (!scene || !selected)
+	if (!scene || !selected) {
 		return;
+	}
 	auto *item = obs_scene_find_sceneitem_by_id(scene, selected->data(Qt::UserRole).toLongLong());
-	if (!item || obs_sceneitem_locked(item))
+	if (!item || obs_sceneitem_locked(item)) {
 		return;
-	if (transformWindow)
+	}
+	if (transformWindow) {
 		transformWindow->close();
+	}
 	transformWindow = new OBSBasicTransform(item, this, true);
 	transformWindow->setAttribute(Qt::WA_DeleteOnClose);
 	transformWindow->show();
@@ -551,34 +605,45 @@ void OBSBasic::EditVerticalLayer()
 
 QJsonArray OBSBasic::MultiStreamDestinations() const
 {
-	if (!Config())
+	if (!Config()) {
 		return {};
+	}
 	const char *saved = config_get_string(Config(), "Stream1", "SimulcastDestinations");
 	if (saved && *saved) {
 		const auto document = QJsonDocument::fromJson(QByteArray(saved));
-		if (document.isArray())
+		if (document.isArray()) {
 			return document.array();
+		}
 	}
 	QJsonArray entries;
 	const char *configured = config_get_string(Config(), "Stream1", "DualStreamYoutubeServer");
 	const QString server = configured && *configured ? QString::fromUtf8(configured)
-		: QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2");
+							 : QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2");
 	for (bool vertical : {false, true}) {
-		const char *key = config_get_string(Config(), "Stream1", vertical ? "DualStreamYoutubeVerticalKey" : "DualStreamYoutubeHorizontalKey");
-		if (key && *key)
-			entries.append(QJsonObject{{"name", vertical ? tr("YouTube Vertical") : tr("YouTube Horizontal")},
-				{"server", server}, {"key", QString::fromUtf8(key)}, {"vertical", vertical},
-				{"encoder", PreferredH264Encoder()}, {"bitrate", vertical ? 6000 : 4500}});
+		const char *key =
+			config_get_string(Config(), "Stream1",
+					  vertical ? "DualStreamYoutubeVerticalKey" : "DualStreamYoutubeHorizontalKey");
+		if (key && *key) {
+			entries.append(
+				QJsonObject{{"name", vertical ? tr("YouTube Vertical") : tr("YouTube Horizontal")},
+					    {"server", server},
+					    {"key", QString::fromUtf8(key)},
+					    {"vertical", vertical},
+					    {"encoder", PreferredH264Encoder()},
+					    {"bitrate", vertical ? 6000 : 4500}});
+		}
 	}
 	return entries;
 }
 
 bool OBSBasic::MultiStreamEnabled() const
 {
-	if (!Config())
+	if (!Config()) {
 		return false;
-	if (config_has_user_value(Config(), "Stream1", "SimulcastMultiStream"))
+	}
+	if (config_has_user_value(Config(), "Stream1", "SimulcastMultiStream")) {
 		return config_get_bool(Config(), "Stream1", "SimulcastMultiStream");
+	}
 	return !MultiStreamDestinations().isEmpty();
 }
 
@@ -598,8 +663,9 @@ bool OBSBasic::MultiStreamEditable()
 
 void OBSBasic::SaveMultiStreamSettings(bool enabled, const QJsonArray &destinations)
 {
-	if (!MultiStreamEditable())
+	if (!MultiStreamEditable()) {
 		return;
+	}
 	const auto json = QJsonDocument(destinations).toJson(QJsonDocument::Compact);
 	config_set_string(Config(), "Stream1", "SimulcastDestinations", json.constData());
 	config_set_bool(Config(), "Stream1", "SimulcastMultiStream", enabled);
@@ -615,7 +681,8 @@ bool OBSBasic::EditStreamDestination(QJsonObject &entry, QWidget *parent)
 	name->setText(entry.value("name").toString());
 	server->setText(entry.value("server").toString(QStringLiteral("rtmps://a.rtmps.youtube.com:443/live2")));
 	server->setPlaceholderText(QStringLiteral("rtmps://host/app"));
-	server->setToolTip(tr("For YouTube, use this same ingest URL for both destinations and enter the separate stream key shown for each orientation."));
+	server->setToolTip(tr(
+		"For YouTube, use this same ingest URL for both destinations and enter the separate stream key shown for each orientation."));
 	auto *key = new QLineEdit(&dialog);
 	key->setEchoMode(QLineEdit::Password);
 	key->setText(entry.value("key").toString());
@@ -628,8 +695,9 @@ bool OBSBasic::EditStreamDestination(QJsonObject &entry, QWidget *parent)
 		const char *codec = obs_get_encoder_codec(id);
 		if (obs_get_encoder_type(id) == OBS_ENCODER_VIDEO && codec && strcmp(codec, "h264") == 0) {
 			QString label = QString::fromUtf8(obs_encoder_get_display_name(id));
-			if (HardwareEncoderPriority(id) >= 0)
+			if (HardwareEncoderPriority(id) >= 0) {
 				label += tr(" (Hardware)");
+			}
 			encoders->addItem(label, QString::fromUtf8(id));
 		}
 	}
@@ -665,23 +733,28 @@ bool OBSBasic::EditStreamDestination(QJsonObject &entry, QWidget *parent)
 		dialog.accept();
 	});
 	connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-	if (dialog.exec() != QDialog::Accepted)
+	if (dialog.exec() != QDialog::Accepted) {
 		return false;
+	}
 	const QString title = name->text().trimmed();
 	entry = QJsonObject{{"name", title.isEmpty() ? QUrl(server->text().trimmed()).host() : title},
-		{"server", server->text().trimmed()}, {"key", key->text().trimmed()},
-		{"vertical", orientation->currentIndex() == 1}, {"encoder", encoders->currentData().toString()},
-		{"bitrate", bitrate->value()}};
+			    {"server", server->text().trimmed()},
+			    {"key", key->text().trimmed()},
+			    {"vertical", orientation->currentIndex() == 1},
+			    {"encoder", encoders->currentData().toString()},
+			    {"bitrate", bitrate->value()}};
 	return true;
 }
 
 void OBSBasic::StartMultiStream()
 {
-	if (!MultiStreamEditable() || disableOutputsRef)
+	if (!MultiStreamEditable() || disableOutputsRef) {
 		return;
+	}
 	const auto entries = MultiStreamDestinations();
 	if (entries.isEmpty()) {
-		QMessageBox::information(this, tr("Multi-Stream"), tr("Add at least one destination in Settings → Stream."));
+		QMessageBox::information(this, tr("Multi-Stream"),
+					 tr("Add at least one destination in Settings → Stream."));
 		return;
 	}
 	// Dispose old inactive outputs and callbacks before replacing their owning objects.
@@ -695,18 +768,21 @@ void OBSBasic::StartMultiStream()
 		destination->key = entry.value("key").toString();
 		destination->vertical = entry.value("vertical").toBool();
 		destination->encoder = entry.value("encoder").toString();
-		if (destination->encoder.isEmpty())
+		if (destination->encoder.isEmpty()) {
 			destination->encoder = PreferredH264Encoder();
+		}
 		destination->bitrate = entry.value("bitrate").toInt(4500);
 		streamDestinations.emplace_back(std::move(destination));
 	}
-	for (const auto &destination : streamDestinations)
+	for (const auto &destination : streamDestinations) {
 		StartStreamDestination(*destination);
+	}
 	if (MultiStreamActive()) {
 		OnActivate();
 		OnEvent(OBS_FRONTEND_EVENT_STREAMING_STARTING);
 	} else {
-		QMessageBox::warning(this, tr("Multi-Stream"), tr("No destinations could be started. Check the stream settings and log."));
+		QMessageBox::warning(this, tr("Multi-Stream"),
+				     tr("No destinations could be started. Check the stream settings and log."));
 	}
 	SaveProject();
 }
@@ -717,10 +793,11 @@ void OBSBasic::StopMultiStream(bool force)
 		auto state = destination->state.load();
 		if ((state == StreamDestination::Connecting || state == StreamDestination::Live) &&
 		    destination->state.compare_exchange_strong(state, StreamDestination::Stopping)) {
-			if (force)
+			if (force) {
 				obs_output_force_stop(destination->output);
-			else
+			} else {
 				obs_output_stop(destination->output);
+			}
 		} else if (force && state == StreamDestination::Stopping && destination->output) {
 			obs_output_force_stop(destination->output);
 		}
@@ -737,7 +814,8 @@ void OBSBasic::StartStreamDestination(StreamDestination &destination)
 	video_t *video = obs_get_video();
 	if (destination.vertical) {
 		GetVerticalScene(true);
-		OBSSourceAutoRelease live = GetVerticalCanvas() ? obs_canvas_get_channel(GetVerticalCanvas(), 0) : nullptr;
+		OBSSourceAutoRelease live = GetVerticalCanvas() ? obs_canvas_get_channel(GetVerticalCanvas(), 0)
+								: nullptr;
 		OBSScene scene(obs_scene_from_source(live));
 		bool hasLayer = false;
 		if (scene) {
@@ -822,20 +900,23 @@ void OBSBasic::StartStreamDestination(StreamDestination &destination)
 void OBSBasic::StartDualRecording(DualRecording &recording)
 {
 	const auto state = recording.state.load();
-	if (state == DualRecording::Recording || state == DualRecording::Stopping)
+	if (state == DualRecording::Recording || state == DualRecording::Stopping) {
 		return;
+	}
 
 	const QString directory = DualRecordingFolder(recording.vertical);
 	if (!QDir().mkpath(directory)) {
 		recording.state.store(DualRecording::Failed);
-		QMessageBox::warning(this, tr("Dual Recording"), tr("Could not create the recording folder:\n%1").arg(directory));
+		QMessageBox::warning(this, tr("Dual Recording"),
+				     tr("Could not create the recording folder:\n%1").arg(directory));
 		return;
 	}
 
 	video_t *video = obs_get_video();
 	if (recording.vertical) {
 		if (!GetVerticalScene(true)) {
-			QMessageBox::information(this, tr("Dual Recording"), tr("Add a source to the vertical scene before recording it."));
+			QMessageBox::information(this, tr("Dual Recording"),
+						 tr("Add a source to the vertical scene before recording it."));
 			return;
 		}
 		video = obs_canvas_get_video(GetVerticalCanvas());
@@ -852,15 +933,16 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 	for (int suffix = 1; suffix < 10000; ++suffix) {
 		const QString collision = suffix == 1 ? QString() : QStringLiteral("-%1").arg(suffix);
 		path = QDir(directory).filePath(QStringLiteral("%1-%2%3.mkv").arg(prefix, stamp, collision));
-		if (!QFileInfo::exists(path))
+		if (!QFileInfo::exists(path)) {
 			break;
+		}
 	}
 
 	OBSDataAutoRelease outputSettings = obs_data_create();
 	obs_data_set_string(outputSettings, "path", path.toUtf8().constData());
-	recording.output = obs_output_create("ffmpeg_muxer", recording.vertical ? "Simulcast Vertical Recording"
-								       : "Simulcast Horizontal Recording",
-				     outputSettings, nullptr);
+	recording.output = obs_output_create(
+		"ffmpeg_muxer", recording.vertical ? "Simulcast Vertical Recording" : "Simulcast Horizontal Recording",
+		outputSettings, nullptr);
 	const QString videoEncoderId = PreferredH264Encoder();
 	if (videoEncoderId.isEmpty()) {
 		recording.state.store(DualRecording::Failed);
@@ -877,12 +959,12 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 		obs_data_set_int(videoSettings, "crf", 18);
 		obs_data_set_string(videoSettings, "preset", "veryfast");
 	}
-	OBSEncoderAutoRelease videoEncoder = obs_video_encoder_create(videoEncoderId.toUtf8().constData(),
-								      "Simulcast Recording H.264", videoSettings, nullptr);
+	OBSEncoderAutoRelease videoEncoder = obs_video_encoder_create(
+		videoEncoderId.toUtf8().constData(), "Simulcast Recording H.264", videoSettings, nullptr);
 	OBSDataAutoRelease audioSettings = obs_data_create();
 	obs_data_set_int(audioSettings, "bitrate", 320);
-	OBSEncoderAutoRelease audioEncoder = obs_audio_encoder_create("ffmpeg_aac", "Simulcast Recording AAC",
-								      audioSettings, 0, nullptr);
+	OBSEncoderAutoRelease audioEncoder =
+		obs_audio_encoder_create("ffmpeg_aac", "Simulcast Recording AAC", audioSettings, 0, nullptr);
 	if (!recording.output || !videoEncoder || !audioEncoder) {
 		recording.output = nullptr;
 		recording.state.store(DualRecording::Failed);
@@ -897,13 +979,20 @@ void OBSBasic::StartDualRecording(DualRecording &recording)
 	recording.started.Disconnect();
 	recording.stopped.Disconnect();
 	auto *handler = obs_output_get_signal_handler(recording.output);
-	recording.started.Connect(handler, "start", [](void *data, calldata_t *) {
-		static_cast<DualRecording *>(data)->state.store(DualRecording::Recording);
-	}, &recording);
-	recording.stopped.Connect(handler, "stop", [](void *data, calldata_t *params) {
-		static_cast<DualRecording *>(data)->state.store(
-			calldata_int(params, "code") == OBS_OUTPUT_SUCCESS ? DualRecording::Idle : DualRecording::Failed);
-	}, &recording);
+	recording.started.Connect(
+		handler, "start",
+		[](void *data, calldata_t *) {
+			static_cast<DualRecording *>(data)->state.store(DualRecording::Recording);
+		},
+		&recording);
+	recording.stopped.Connect(
+		handler, "stop",
+		[](void *data, calldata_t *params) {
+			static_cast<DualRecording *>(data)->state.store(
+				calldata_int(params, "code") == OBS_OUTPUT_SUCCESS ? DualRecording::Idle
+										   : DualRecording::Failed);
+		},
+		&recording);
 	recording.state.store(DualRecording::Stopping);
 	if (!obs_output_start(recording.output)) {
 		recording.state.store(DualRecording::Failed);
@@ -916,24 +1005,29 @@ void OBSBasic::StopDualRecordings()
 {
 	bool stopping = false;
 	for (DualRecording *recording : {horizontalRecording.get(), verticalRecording.get()}) {
-		if (!recording || !recording->output)
+		if (!recording || !recording->output) {
 			continue;
-		if (recording->state.load() == DualRecording::Recording || recording->state.load() == DualRecording::Stopping) {
+		}
+		if (recording->state.load() == DualRecording::Recording ||
+		    recording->state.load() == DualRecording::Stopping) {
 			recording->state.store(DualRecording::Stopping);
 			obs_output_force_stop(recording->output);
 			stopping = true;
 		}
 	}
-	if (stopping)
+	if (stopping) {
 		obs_wait_for_destroy_queue();
+	}
 	for (DualRecording *recording : {horizontalRecording.get(), verticalRecording.get()}) {
-		if (!recording)
+		if (!recording) {
 			continue;
+		}
 		recording->started.Disconnect();
 		recording->stopped.Disconnect();
 		recording->output = nullptr;
-		if (recording->state.load() == DualRecording::Stopping)
+		if (recording->state.load() == DualRecording::Stopping) {
 			recording->state.store(DualRecording::Idle);
+		}
 	}
 }
 
@@ -941,8 +1035,9 @@ QString OBSBasic::DualRecordingFolder(bool vertical) const
 {
 	const char *key = vertical ? "DualRecordVerticalDirectory" : "DualRecordHorizontalDirectory";
 	const char *stored = config_get_string(App()->GetUserConfig(), "BasicWindow", key);
-	if (stored && *stored)
+	if (stored && *stored) {
 		return QString::fromUtf8(stored);
+	}
 	const QString movies = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation);
 	const QString root = QDir(movies.isEmpty() ? QDir::home().filePath(QStringLiteral("Videos")) : movies)
 				     .filePath(QStringLiteral("Simulcast"));
@@ -952,8 +1047,9 @@ QString OBSBasic::DualRecordingFolder(bool vertical) const
 bool OBSBasic::DualRecordingsActive() const
 {
 	const auto active = [](const std::unique_ptr<DualRecording> &recording) {
-		if (!recording)
+		if (!recording) {
 			return false;
+		}
 		const auto state = recording->state.load();
 		return state == DualRecording::Recording || state == DualRecording::Stopping;
 	};
@@ -962,8 +1058,9 @@ bool OBSBasic::DualRecordingsActive() const
 
 void OBSBasic::ToggleDualRecordings()
 {
-	if (!horizontalRecording || !verticalRecording)
+	if (!horizontalRecording || !verticalRecording) {
 		return;
+	}
 	if (DualRecordingsActive()) {
 		StopDualRecordings();
 		return;
@@ -974,18 +1071,21 @@ void OBSBasic::ToggleDualRecordings()
 
 void OBSBasic::SaveDualRecordingFolders(const QString &horizontal, const QString &vertical)
 {
-	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordHorizontalDirectory", horizontal.toUtf8().constData());
-	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordVerticalDirectory", vertical.toUtf8().constData());
+	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordHorizontalDirectory",
+			  horizontal.toUtf8().constData());
+	config_set_string(App()->GetUserConfig(), "BasicWindow", "DualRecordVerticalDirectory",
+			  vertical.toUtf8().constData());
 	config_save_safe(App()->GetUserConfig(), "tmp", nullptr);
 }
 
 bool OBSBasic::ExtraStreamsActive() const
 {
-	const bool destinationsActive = std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
-		const auto state = destination->state.load();
-		return state == StreamDestination::Connecting || state == StreamDestination::Live ||
-		       state == StreamDestination::Stopping;
-	});
+	const bool destinationsActive =
+		std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
+			const auto state = destination->state.load();
+			return state == StreamDestination::Connecting || state == StreamDestination::Live ||
+			       state == StreamDestination::Stopping;
+		});
 	return destinationsActive || DualRecordingsActive();
 }
 
@@ -1061,22 +1161,28 @@ void OBSBasic::InitDualStreamDock()
 	verticalProgramDisplay->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 	verticalProgramDisplay->setMinimumWidth(100);
 	connect(verticalProgramDisplay, &OBSQTDisplay::DisplayCreated, this, [](OBSQTDisplay *display) {
-		obs_display_add_draw_callback(display->GetDisplay(), [](void *, uint32_t width, uint32_t height) {
-			OBSCanvasAutoRelease canvas = obs_get_canvas_by_name(VerticalCanvasName);
-			if (!canvas || !width || !height)
-				return;
-			int x = 0, y = 0;
-			float scale = 1.0f;
-			GetScaleAndCenterPos(VerticalWidth, VerticalHeight, static_cast<int>(width), static_cast<int>(height), x, y, scale);
-			gs_viewport_push();
-			gs_projection_push();
-			gs_ortho(0, float(VerticalWidth), 0, float(VerticalHeight), -100, 100);
-			gs_set_viewport(x, y, std::max(1, int(VerticalWidth * scale)), std::max(1, int(VerticalHeight * scale)));
-			obs_render_canvas_texture_src_color_only(canvas);
-			gs_load_vertexbuffer(nullptr);
-			gs_projection_pop();
-			gs_viewport_pop();
-		}, nullptr);
+		obs_display_add_draw_callback(
+			display->GetDisplay(),
+			[](void *, uint32_t width, uint32_t height) {
+				OBSCanvasAutoRelease canvas = obs_get_canvas_by_name(VerticalCanvasName);
+				if (!canvas || !width || !height) {
+					return;
+				}
+				int x = 0, y = 0;
+				float scale = 1.0f;
+				GetScaleAndCenterPos(VerticalWidth, VerticalHeight, static_cast<int>(width),
+						     static_cast<int>(height), x, y, scale);
+				gs_viewport_push();
+				gs_projection_push();
+				gs_ortho(0, float(VerticalWidth), 0, float(VerticalHeight), -100, 100);
+				gs_set_viewport(x, y, std::max(1, int(VerticalWidth * scale)),
+						std::max(1, int(VerticalHeight * scale)));
+				obs_render_canvas_texture_src_color_only(canvas);
+				gs_load_vertexbuffer(nullptr);
+				gs_projection_pop();
+				gs_viewport_pop();
+			},
+			nullptr);
 	});
 	programLayout->addWidget(verticalProgramDisplay, 1);
 	portraitViews->addWidget(verticalProgramPanel, 1);
@@ -1108,13 +1214,15 @@ void OBSBasic::InitDualStreamDock()
 	verticalScenes->setDefaultDropAction(Qt::MoveAction);
 	verticalScenes->setSelectionMode(QAbstractItemView::SingleSelection);
 	connect(verticalScenes, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
-		if (item)
+		if (item) {
 			SelectVerticalScene(item->data(Qt::UserRole).toString());
+		}
 	});
 	auto saveSceneOrder = [this] {
 		verticalSceneOrder.clear();
-		for (int i = 0; i < verticalScenes->count(); ++i)
+		for (int i = 0; i < verticalScenes->count(); ++i) {
 			verticalSceneOrder.append(verticalScenes->item(i)->data(Qt::UserRole).toString());
+		}
 		SaveProject();
 	};
 	sceneList->orderChanged = saveSceneOrder;
@@ -1133,15 +1241,19 @@ void OBSBasic::InitDualStreamDock()
 	auto *sceneDown = toolbarAction(sceneToolbar, ui->actionSceneDown, tr("Move Scene Down"));
 	auto renameScene = [this] {
 		auto scene = GetVerticalScene(false);
-		if (!scene)
+		if (!scene) {
 			return;
+		}
 		auto *source = obs_scene_get_source(scene);
 		bool ok = false;
 		const auto name = QInputDialog::getText(this, tr("Rename Scene"), tr("Name"), QLineEdit::Normal,
-			QString::fromUtf8(obs_source_get_name(source)), &ok).trimmed();
-		if (!ok || name.isEmpty() || name == QString::fromUtf8(obs_source_get_name(source)))
+							QString::fromUtf8(obs_source_get_name(source)), &ok)
+					  .trimmed();
+		if (!ok || name.isEmpty() || name == QString::fromUtf8(obs_source_get_name(source))) {
 			return;
-		OBSSceneAutoRelease existing = obs_canvas_get_scene_by_name(GetVerticalCanvas(), name.toUtf8().constData());
+		}
+		OBSSceneAutoRelease existing =
+			obs_canvas_get_scene_by_name(GetVerticalCanvas(), name.toUtf8().constData());
 		if (existing) {
 			QMessageBox::warning(this, tr("Rename Scene"), tr("That scene name already exists."));
 			return;
@@ -1151,13 +1263,16 @@ void OBSBasic::InitDualStreamDock()
 		SaveProject();
 	};
 	connect(addScene, &QAction::triggered, this, [this] {
-		if (!GetVerticalScene(true))
+		if (!GetVerticalScene(true)) {
 			return;
+		}
 		bool ok = false;
 		const auto name = QInputDialog::getText(this, tr("Add Scene"), tr("Name"), QLineEdit::Normal,
-			tr("Vertical Scene"), &ok).trimmed();
-		if (!ok || name.isEmpty())
+							tr("Vertical Scene"), &ok)
+					  .trimmed();
+		if (!ok || name.isEmpty()) {
 			return;
+		}
 		auto *canvas = GetVerticalCanvas();
 		OBSSceneAutoRelease existing = obs_canvas_get_scene_by_name(canvas, name.toUtf8().constData());
 		if (existing) {
@@ -1165,38 +1280,49 @@ void OBSBasic::InitDualStreamDock()
 			return;
 		}
 		OBSSceneAutoRelease scene = obs_canvas_scene_create(canvas, name.toUtf8().constData());
-		if (scene)
+		if (scene) {
 			SelectVerticalScene(QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(scene))));
+		}
 	});
 	auto duplicateScene = [this] {
 		auto scene = GetVerticalScene(false);
-		if (!scene)
+		if (!scene) {
 			return;
+		}
 		bool ok = false;
 		const auto original = QString::fromUtf8(obs_source_get_name(obs_scene_get_source(scene)));
 		const auto name = QInputDialog::getText(this, tr("Duplicate Scene"), tr("Name"), QLineEdit::Normal,
-			original + tr(" Copy"), &ok).trimmed();
-		if (!ok || name.isEmpty())
+							original + tr(" Copy"), &ok)
+					  .trimmed();
+		if (!ok || name.isEmpty()) {
 			return;
-		OBSSceneAutoRelease existing = obs_canvas_get_scene_by_name(GetVerticalCanvas(), name.toUtf8().constData());
+		}
+		OBSSceneAutoRelease existing =
+			obs_canvas_get_scene_by_name(GetVerticalCanvas(), name.toUtf8().constData());
 		if (existing) {
 			QMessageBox::warning(this, tr("Duplicate Scene"), tr("That scene name already exists."));
 			return;
 		}
 		OBSSceneAutoRelease copy = obs_scene_duplicate(scene, name.toUtf8().constData(), OBS_SCENE_DUP_REFS);
-		if (copy)
+		if (copy) {
 			SelectVerticalScene(QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(copy))));
+		}
 	};
 	connect(removeScene, &QAction::triggered, this, [this] {
-		if (verticalScenes->count() <= 1)
-			return;
-		auto scene = GetVerticalScene(false);
-		if (IsPreviewProgramMode() && verticalSceneUuid == verticalProgramUuid) {
-			QMessageBox::information(this, tr("Remove Scene"), tr("Transition to another vertical program scene before removing the on-air scene."));
+		if (verticalScenes->count() <= 1) {
 			return;
 		}
-		if (!scene || QMessageBox::question(this, tr("Remove Scene"), tr("Remove the selected vertical scene?")) != QMessageBox::Yes)
+		auto scene = GetVerticalScene(false);
+		if (IsPreviewProgramMode() && verticalSceneUuid == verticalProgramUuid) {
+			QMessageBox::information(
+				this, tr("Remove Scene"),
+				tr("Transition to another vertical program scene before removing the on-air scene."));
 			return;
+		}
+		if (!scene || QMessageBox::question(this, tr("Remove Scene"),
+						    tr("Remove the selected vertical scene?")) != QMessageBox::Yes) {
+			return;
+		}
 		const int row = verticalScenes->currentRow();
 		const QString next = verticalScenes->item(row > 0 ? row - 1 : row + 1)->data(Qt::UserRole).toString();
 		SelectVerticalScene(next);
@@ -1207,14 +1333,16 @@ void OBSBasic::InitDualStreamDock()
 		SaveProject();
 	});
 	connect(sceneFilters, &QAction::triggered, this, [this] {
-		if (auto scene = GetVerticalScene(false))
+		if (auto scene = GetVerticalScene(false)) {
 			CreateFiltersWindow(obs_scene_get_source(scene));
+		}
 	});
 	auto moveScene = [this, saveSceneOrder](int delta) {
 		const int row = verticalScenes->currentRow();
 		const int next = row + delta;
-		if (row < 0 || next < 0 || next >= verticalScenes->count())
+		if (row < 0 || next < 0 || next >= verticalScenes->count()) {
 			return;
+		}
 		const QSignalBlocker block(verticalScenes);
 		auto *item = verticalScenes->takeItem(row);
 		verticalScenes->insertItem(next, item);
@@ -1224,19 +1352,22 @@ void OBSBasic::InitDualStreamDock()
 	connect(sceneUp, &QAction::triggered, this, [moveScene] { moveScene(-1); });
 	connect(sceneDown, &QAction::triggered, this, [moveScene] { moveScene(1); });
 	verticalScenes->setContextMenuPolicy(Qt::CustomContextMenu);
-	connect(verticalScenes, &QWidget::customContextMenuRequested, this, [this, addScene, removeScene, sceneFilters, renameScene, duplicateScene, sceneUp, sceneDown](const QPoint &pos) {
-		if (auto *item = verticalScenes->itemAt(pos))
-			verticalScenes->setCurrentItem(item);
-		QMenu menu(verticalScenes);
-		menu.addAction(addScene);
-		menu.addAction(tr("Rename"), this, renameScene);
-		menu.addAction(tr("Duplicate"), this, duplicateScene);
-		menu.addAction(removeScene);
-		menu.addAction(sceneFilters);
-		menu.addAction(sceneUp);
-		menu.addAction(sceneDown);
-		menu.exec(verticalScenes->viewport()->mapToGlobal(pos));
-	});
+	connect(verticalScenes, &QWidget::customContextMenuRequested, this,
+		[this, addScene, removeScene, sceneFilters, renameScene, duplicateScene, sceneUp,
+		 sceneDown](const QPoint &pos) {
+			if (auto *item = verticalScenes->itemAt(pos)) {
+				verticalScenes->setCurrentItem(item);
+			}
+			QMenu menu(verticalScenes);
+			menu.addAction(addScene);
+			menu.addAction(tr("Rename"), this, renameScene);
+			menu.addAction(tr("Duplicate"), this, duplicateScene);
+			menu.addAction(removeScene);
+			menu.addAction(sceneFilters);
+			menu.addAction(sceneUp);
+			menu.addAction(sceneDown);
+			menu.exec(verticalScenes->viewport()->mapToGlobal(pos));
+		});
 	connect(verticalScenes, &QListWidget::itemDoubleClicked, this, renameScene);
 	layout->addWidget(new QLabel(tr("Vertical Scenes"), content));
 	layout->addWidget(verticalScenes, 1);
@@ -1248,14 +1379,17 @@ void OBSBasic::InitDualStreamDock()
 	verticalLayers->setDefaultDropAction(Qt::MoveAction);
 	sourceList->orderChanged = [this] {
 		auto scene = GetVerticalScene(false);
-		if (!scene)
+		if (!scene) {
 			return;
+		}
 		QList<qlonglong> ids;
-		for (int i = 0; i < verticalLayers->count(); ++i)
+		for (int i = 0; i < verticalLayers->count(); ++i) {
 			ids.append(verticalLayers->item(i)->data(Qt::UserRole).toLongLong());
+		}
 		for (int i = 0; i < ids.size(); ++i) {
-			if (auto *item = obs_scene_find_sceneitem_by_id(scene, ids[i]))
+			if (auto *item = obs_scene_find_sceneitem_by_id(scene, ids[i])) {
 				obs_sceneitem_set_order_position(item, static_cast<int>(ids.size()) - 1 - i);
+			}
 		}
 		verticalLayersFingerprint.clear();
 		QTimer::singleShot(0, this, &OBSBasic::RefreshVerticalLayers);
@@ -1342,16 +1476,22 @@ void OBSBasic::InitDualStreamDock()
 	connect(removeLayer, &QAction::triggered, this, [this] {
 		auto scene = GetVerticalScene(false);
 		if (!scene || verticalLayers->selectedItems().isEmpty() ||
-		    QMessageBox::question(this, tr("Remove Sources"), tr("Remove selected vertical sources?")) != QMessageBox::Yes)
+		    QMessageBox::question(this, tr("Remove Sources"), tr("Remove selected vertical sources?")) !=
+			    QMessageBox::Yes) {
 			return;
+		}
 		QList<qlonglong> ids;
-		for (auto *entry : verticalLayers->selectedItems())
+		for (auto *entry : verticalLayers->selectedItems()) {
 			ids.append(entry->data(Qt::UserRole).toLongLong());
-		if (verticalPreview)
+		}
+		if (verticalPreview) {
 			verticalPreview->ResetEditingState();
-		for (const auto id : ids)
-			if (auto *item = obs_scene_find_sceneitem_by_id(scene, id))
+		}
+		for (const auto id : ids) {
+			if (auto *item = obs_scene_find_sceneitem_by_id(scene, id)) {
 				obs_sceneitem_remove(item);
+			}
+		}
 		RefreshVerticalLayers();
 		SaveProject();
 	});
@@ -1378,13 +1518,20 @@ void OBSBasic::InitDualStreamDock()
 				changeLayer([this](obs_sceneitem_t *item) {
 					auto *source = obs_sceneitem_get_source(item);
 					bool ok = false;
-					const auto name = QInputDialog::getText(this, tr("Rename Source"), tr("Name"),
-						QLineEdit::Normal, QString::fromUtf8(obs_source_get_name(source)), &ok).trimmed();
-					if (!ok || name.isEmpty() || name == QString::fromUtf8(obs_source_get_name(source)))
+					const auto name = QInputDialog::getText(
+								  this, tr("Rename Source"), tr("Name"),
+								  QLineEdit::Normal,
+								  QString::fromUtf8(obs_source_get_name(source)), &ok)
+								  .trimmed();
+					if (!ok || name.isEmpty() ||
+					    name == QString::fromUtf8(obs_source_get_name(source))) {
 						return;
-					OBSSourceAutoRelease existing = obs_get_source_by_name(name.toUtf8().constData());
-					if (!existing)
+					}
+					OBSSourceAutoRelease existing =
+						obs_get_source_by_name(name.toUtf8().constData());
+					if (!existing) {
 						obs_source_set_name(source, name.toUtf8().constData());
+					}
 				});
 			});
 			menu.addAction(tr("Properties"), this, openProperties);
@@ -1397,19 +1544,22 @@ void OBSBasic::InitDualStreamDock()
 			transformMenu->addAction(tr("Edit Transform"), this, &OBSBasic::EditVerticalLayer);
 			auto fit = [this, id = obs_sceneitem_get_id(item)](obs_bounds_type bounds) {
 				auto target = GetVerticalScene(false);
-				if (!target)
+				if (!target) {
 					return;
+				}
 				auto *layer = obs_scene_find_sceneitem_by_id(target, id);
-				if (!layer || obs_sceneitem_locked(layer))
+				if (!layer || obs_sceneitem_locked(layer)) {
 					return;
+				}
 				OBSDataAutoRelease before = obs_scene_save_transform_states(target, true);
 				obs_transform_info info{};
 				vec2_set(&info.scale, 1.0f, 1.0f);
 				info.alignment = OBS_ALIGN_TOP | OBS_ALIGN_LEFT;
 				info.bounds_alignment = OBS_ALIGN_CENTER;
 				info.bounds_type = bounds;
-				if (bounds != OBS_BOUNDS_NONE)
+				if (bounds != OBS_BOUNDS_NONE) {
 					vec2_set(&info.bounds, float(VerticalWidth), float(VerticalHeight));
+				}
 				obs_sceneitem_set_info2(layer, &info);
 				if (bounds == OBS_BOUNDS_NONE) {
 					obs_sceneitem_crop crop{};
@@ -1417,13 +1567,15 @@ void OBSBasic::InitDualStreamDock()
 				}
 				OBSDataAutoRelease after = obs_scene_save_transform_states(target, true);
 				if (before && after) {
-					const std::string oldState(obs_data_get_json(before)), newState(obs_data_get_json(after));
+					const std::string oldState(obs_data_get_json(before)),
+						newState(obs_data_get_json(after));
 					if (oldState != newState) {
 						auto apply = [](const std::string &json) {
 							obs_scene_load_transform_states(json.c_str());
 							OBSBasic::Get()->SaveProject();
 						};
-						undo_s.add_action(tr("Vertical Transform"), apply, apply, oldState, newState);
+						undo_s.add_action(tr("Vertical Transform"), apply, apply, oldState,
+								  newState);
 					}
 				}
 				SaveProject();
@@ -1472,38 +1624,48 @@ void OBSBasic::InitDualStreamDock()
 
 	auto *timer = new QTimer(dock);
 	connect(timer, &QTimer::timeout, this, [this, recordingStatus, wasActive = false, wasLive = false]() mutable {
-		if (verticalPreviewPanel && verticalPreviewPanel->isVisible() && !(QApplication::mouseButtons() & Qt::LeftButton)) {
+		if (verticalPreviewPanel && verticalPreviewPanel->isVisible() &&
+		    !(QApplication::mouseButtons() & Qt::LeftButton)) {
 			RefreshVerticalScenes();
 			RefreshVerticalLayers();
 		}
 		const bool active = MultiStreamActive();
-		const bool live = std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
-			return destination->state.load() == StreamDestination::Live;
-		});
-		if (live && !wasLive)
+		const bool live =
+			std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
+				return destination->state.load() == StreamDestination::Live;
+			});
+		if (live && !wasLive) {
 			OnEvent(OBS_FRONTEND_EVENT_STREAMING_STARTED);
+		}
 		if (wasActive && !active) {
 			OnEvent(OBS_FRONTEND_EVENT_STREAMING_STOPPED);
 			OnDeactivate();
 		}
-		if ((active || wasActive) && sysTrayStream)
-			sysTrayStream->setText(active ? QTStr("Basic.Main.StopStreaming") : QTStr("Basic.Main.StartStreaming"));
+		if ((active || wasActive) && sysTrayStream) {
+			sysTrayStream->setText(active ? QTStr("Basic.Main.StopStreaming")
+						      : QTStr("Basic.Main.StartStreaming"));
+		}
 		wasActive = active;
 		wasLive = active && (live || wasLive);
 		auto stateName = [](DualRecording::State state) {
 			switch (state) {
-			case DualRecording::Recording: return QStringLiteral("Recording");
-			case DualRecording::Stopping: return QStringLiteral("Stopping");
-			case DualRecording::Failed: return QStringLiteral("Failed");
-			default: return QStringLiteral("Ready");
+			case DualRecording::Recording:
+				return QStringLiteral("Recording");
+			case DualRecording::Stopping:
+				return QStringLiteral("Stopping");
+			case DualRecording::Failed:
+				return QStringLiteral("Failed");
+			default:
+				return QStringLiteral("Ready");
 			}
 		};
 		recordingStatus->setText(tr("Horizontal: %1 · Vertical: %2 · MKV (H.264/AAC)")
-			.arg(stateName(horizontalRecording->state.load()), stateName(verticalRecording->state.load())));
+						 .arg(stateName(horizontalRecording->state.load()),
+						      stateName(verticalRecording->state.load())));
 	});
 	timer->start(250);
 	verticalPreview->setFocusPolicy(Qt::StrongFocus);
-	auto nudge = [this](int key, int dx, int dy) {
+	auto nudge = [this](QKeyCombination key, int dx, int dy) {
 		auto *action = new QAction(verticalPreview);
 		action->setShortcut(QKeySequence(key));
 		action->setShortcutContext(Qt::WidgetShortcut);
@@ -1521,16 +1683,16 @@ void OBSBasic::InitDualStreamDock()
 	verticalPreview->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(verticalPreview, &QWidget::customContextMenuRequested, this, [this](const QPoint &) {
 		RefreshVerticalLayers();
-		if (auto *item = verticalLayers->currentItem())
+		if (auto *item = verticalLayers->currentItem()) {
 			emit verticalLayers->customContextMenuRequested(verticalLayers->visualItemRect(item).center());
+		}
 	});
 	dock->setWidget(content);
 	AddDockWidget(dock, Qt::RightDockWidgetArea);
 	// Register after AddDockWidget: setupDockAction disconnects existing triggered slots.
 	// Its visibility update runs first, even when visibilityChanged is blocked.
-	connect(dock->toggleViewAction(), &QAction::triggered, this, [dock, syncVerticalPreview](bool) {
-		syncVerticalPreview(!dock->isHidden());
-	});
+	connect(dock->toggleViewAction(), &QAction::triggered, this,
+		[dock, syncVerticalPreview](bool) { syncVerticalPreview(!dock->isHidden()); });
 	dock->hide();
 	syncVerticalPreview(false);
 }

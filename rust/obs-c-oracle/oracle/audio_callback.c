@@ -48,6 +48,7 @@ void oracle_tick_blog(int log_level, const char *format, ...);
 
 bool oracle_audio_callback(void *param, uint64_t start_ts_in, uint64_t end_ts_in, uint64_t *out_ts, uint32_t mixers,
 			   struct audio_output_data *mixes);
+void oracle_obs_set_master_volume_percent(int percent);
 
 struct obs_audio_ignore_step oracle_obs_audio_discard_ignore(const struct obs_audio_input *in, size_t channels,
 							     size_t sample_rate, uint64_t start_ts);
@@ -80,6 +81,8 @@ enum obs_audio_buffering_choice oracle_obs_audio_min_ts_buffering(bool fixed_buf
 
 #define obs oracle_tick_obs
 #define audio_callback oracle_audio_callback
+/* The reference callback keeps its own gain state and links beside the Rust export. */
+#define obs_set_master_volume_percent oracle_obs_set_master_volume_percent
 #define audio_output_get_sample_rate oracle_tick_sample_rate
 #define audio_output_get_channels oracle_tick_channels
 #define obs_source_get_ref oracle_tick_get_ref
@@ -140,6 +143,7 @@ enum obs_audio_buffering_choice oracle_obs_audio_min_ts_buffering(bool fixed_buf
 #undef audio_output_get_channels
 #undef audio_output_get_sample_rate
 #undef audio_callback
+#undef obs_set_master_volume_percent
 
 /* `obs` stays renamed: the seam reads the world that runs. */
 #include "obs-audio-seam.c.h"
