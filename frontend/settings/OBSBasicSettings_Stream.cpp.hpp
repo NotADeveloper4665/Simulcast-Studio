@@ -113,7 +113,9 @@ void OBSBasicSettings::InitStreamPage()
 	auto *multiLayout = new QVBoxLayout(multiStreamGroup);
 	multiStreamMode = new QCheckBox(tr("Use multistream instead of single-service streaming"), multiStreamGroup);
 	multiLayout->addWidget(multiStreamMode);
-	auto *hint = new QLabel(tr("Add YouTube, Twitch, Kick or another RTMP(S) destination. Each destination can use either canvas. Start Streaming starts all configured destinations."), multiStreamGroup);
+	auto *hint = new QLabel(
+		tr("Add YouTube, Twitch, Kick or another RTMP(S) destination. Each destination can use either canvas. Start Streaming starts all configured destinations."),
+		multiStreamGroup);
 	hint->setWordWrap(true);
 	multiLayout->addWidget(hint);
 	multiStreamList = new QListWidget(multiStreamGroup);
@@ -140,24 +142,36 @@ void OBSBasicSettings::InitStreamPage()
 		ui->widget_5->setVisible(!multiStreamMode->isChecked());
 		ui->streamStackWidget->setVisible(!multiStreamMode->isChecked());
 	};
-	connect(multiStreamMode, &QCheckBox::toggled, this, [dirty, updateMode](bool) { dirty(); updateMode(); });
+	connect(multiStreamMode, &QCheckBox::toggled, this, [dirty, updateMode](bool) {
+		dirty();
+		updateMode();
+	});
 	auto editEntry = [this, dirty](bool existing) {
 		auto *item = existing ? multiStreamList->currentItem() : nullptr;
-		if (existing && !item)
+		if (existing && !item) {
 			return;
+		}
 		QJsonObject entry = item ? item->data(Qt::UserRole).toJsonObject() : QJsonObject{};
-		if (!main->EditStreamDestination(entry, this))
+		if (!main->EditStreamDestination(entry, this)) {
 			return;
+		}
 		for (int i = 0; i < multiStreamList->count(); ++i) {
 			auto *other = multiStreamList->item(i);
-			if (other == item)
+			if (other == item) {
 				continue;
+			}
 			const auto old = other->data(Qt::UserRole).toJsonObject();
-			const auto host = [](const QJsonObject &obj) { return QUrl(obj.value("server").toString()).host().toLower(); };
-			const auto youtube = [](const QString &h) { return h == QStringLiteral("youtube.com") || h.endsWith(QStringLiteral(".youtube.com")); };
-			if (old.value("key") == entry.value("key") &&
-			    (old.value("server") == entry.value("server") || (youtube(host(old)) && youtube(host(entry))))) {
-				QMessageBox::warning(this, tr("Duplicate Stream Key"), tr("Use a distinct stream key for each destination on the same service."));
+			const auto host = [](const QJsonObject &obj) {
+				return QUrl(obj.value("server").toString()).host().toLower();
+			};
+			const auto youtube = [](const QString &h) {
+				return h == QStringLiteral("youtube.com") || h.endsWith(QStringLiteral(".youtube.com"));
+			};
+			if (old.value("key") == entry.value("key") && (old.value("server") == entry.value("server") ||
+								       (youtube(host(old)) && youtube(host(entry))))) {
+				QMessageBox::warning(
+					this, tr("Duplicate Stream Key"),
+					tr("Use a distinct stream key for each destination on the same service."));
 				return;
 			}
 		}
@@ -166,13 +180,16 @@ void OBSBasicSettings::InitStreamPage()
 			multiStreamList->setCurrentItem(item);
 		}
 		item->setData(Qt::UserRole, QVariant::fromValue(entry));
-		item->setText(tr("%1 · %2 · %3 kbps").arg(entry.value("name").toString(),
-			entry.value("vertical").toBool() ? tr("Vertical") : tr("Horizontal")).arg(entry.value("bitrate").toInt()));
+		item->setText(tr("%1 · %2 · %3 kbps")
+				      .arg(entry.value("name").toString(),
+					   entry.value("vertical").toBool() ? tr("Vertical") : tr("Horizontal"))
+				      .arg(entry.value("bitrate").toInt()));
 		dirty();
 	};
 	connect(add, &QPushButton::clicked, this, [editEntry] { editEntry(false); });
 	connect(edit, &QPushButton::clicked, this, [editEntry] { editEntry(true); });
-	connect(multiStreamList, &QListWidget::itemDoubleClicked, this, [editEntry](QListWidgetItem *) { editEntry(true); });
+	connect(multiStreamList, &QListWidget::itemDoubleClicked, this,
+		[editEntry](QListWidgetItem *) { editEntry(true); });
 	connect(remove, &QPushButton::clicked, this, [this, dirty] {
 		if (multiStreamList->currentRow() >= 0) {
 			delete multiStreamList->takeItem(multiStreamList->currentRow());
@@ -215,15 +232,17 @@ void OBSBasicSettings::LoadMultiStreamSettings()
 	const QSignalBlocker block(multiStreamMode);
 	multiStreamMode->setChecked(main->MultiStreamEnabled());
 	ui->widget_5->setVisible(!multiStreamMode->isChecked());
-		ui->streamStackWidget->setVisible(!multiStreamMode->isChecked());
+	ui->streamStackWidget->setVisible(!multiStreamMode->isChecked());
 	multiStreamList->clear();
 	const auto entries = main->MultiStreamDestinations();
 	for (const auto &value : entries) {
 		const auto entry = value.toObject();
 		auto *item = new QListWidgetItem(multiStreamList);
 		item->setData(Qt::UserRole, QVariant::fromValue(entry));
-		item->setText(tr("%1 · %2 · %3 kbps").arg(entry.value("name").toString(),
-			entry.value("vertical").toBool() ? tr("Vertical") : tr("Horizontal")).arg(entry.value("bitrate").toInt()));
+		item->setText(tr("%1 · %2 · %3 kbps")
+				      .arg(entry.value("name").toString(),
+					   entry.value("vertical").toBool() ? tr("Vertical") : tr("Horizontal"))
+				      .arg(entry.value("bitrate").toInt()));
 	}
 	multiStreamGroup->setEnabled(main->MultiStreamEditable());
 }
@@ -231,8 +250,9 @@ void OBSBasicSettings::LoadMultiStreamSettings()
 void OBSBasicSettings::SaveMultiStreamSettings()
 {
 	QJsonArray entries;
-	for (int i = 0; i < multiStreamList->count(); ++i)
+	for (int i = 0; i < multiStreamList->count(); ++i) {
 		entries.append(multiStreamList->item(i)->data(Qt::UserRole).toJsonObject());
+	}
 	main->SaveMultiStreamSettings(multiStreamMode->isChecked(), entries);
 }
 

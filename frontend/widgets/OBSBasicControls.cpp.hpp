@@ -47,11 +47,20 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 		int live = 0, connecting = 0, stopping = 0, failed = 0;
 		for (const auto &destination : main->streamDestinations) {
 			switch (destination->state.load()) {
-			case OBSBasic::StreamDestination::Live: ++live; break;
-			case OBSBasic::StreamDestination::Connecting: ++connecting; break;
-			case OBSBasic::StreamDestination::Stopping: ++stopping; break;
-			case OBSBasic::StreamDestination::Failed: ++failed; break;
-			default: break;
+			case OBSBasic::StreamDestination::Live:
+				++live;
+				break;
+			case OBSBasic::StreamDestination::Connecting:
+				++connecting;
+				break;
+			case OBSBasic::StreamDestination::Stopping:
+				++stopping;
+				break;
+			case OBSBasic::StreamDestination::Failed:
+				++failed;
+				break;
+			default:
+				break;
 			}
 		}
 		const bool active = live || connecting || stopping;
@@ -61,7 +70,10 @@ OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui:
 			setClasses(ui->streamButton, active ? "state-active" : "");
 		}
 		ui->streamButton->setToolTip(tr("Multi-stream: %1 live, %2 connecting, %3 stopping, %4 failed")
-			.arg(live).arg(connecting).arg(stopping).arg(failed));
+						     .arg(live)
+						     .arg(connecting)
+						     .arg(stopping)
+						     .arg(failed));
 		ui->streamButton->setMenu(nullptr);
 		ui->streamButton->setEnabled(!stopping || live || connecting);
 	});

@@ -53,7 +53,8 @@ static vec2 getAlignmentConversion(uint32_t alignment)
 OBSBasicTransform::OBSBasicTransform(OBSSceneItem item, OBSBasic *parent, bool portrait)
 	: QDialog(parent),
 	  ui(new Ui::OBSBasicTransform),
-	  main(parent), portrait(portrait)
+	  main(parent),
+	  portrait(portrait)
 {
 	setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
@@ -92,8 +93,9 @@ OBSBasicTransform::OBSBasicTransform(OBSSceneItem item, OBSBasic *parent, bool p
 
 	if (portrait) {
 		connect(ui->buttonBox->button(QDialogButtonBox::Reset), &QPushButton::clicked, this, [this] {
-			if (!this->item || obs_sceneitem_locked(this->item))
+			if (!this->item || obs_sceneitem_locked(this->item)) {
 				return;
+			}
 			obs_transform_info info{};
 			vec2_set(&info.scale, 1.0f, 1.0f);
 			info.alignment = OBS_ALIGN_TOP | OBS_ALIGN_LEFT;
@@ -111,15 +113,17 @@ OBSBasicTransform::OBSBasicTransform(OBSSceneItem item, OBSBasic *parent, bool p
 	installEventFilter(CreateShortcutFilter(this));
 
 	OBSScene scene = obs_sceneitem_get_scene(item);
-	if (portrait)
+	if (portrait) {
 		portraitScene = scene;
+	}
 	setScene(scene);
 	setItem(item);
 
 	std::string name = obs_source_get_name(obs_sceneitem_get_source(item));
 	setWindowTitle(QTStr("Basic.TransformWindow.Title").arg(name.c_str()));
 
-	OBSDataAutoRelease wrapper = obs_scene_save_transform_states(portrait ? portraitScene : main->GetCurrentScene(), false);
+	OBSDataAutoRelease wrapper =
+		obs_scene_save_transform_states(portrait ? portraitScene : main->GetCurrentScene(), false);
 	undo_data = std::string(obs_data_get_json(wrapper));
 
 	adjustSize();
@@ -129,21 +133,24 @@ OBSBasicTransform::OBSBasicTransform(OBSSceneItem item, OBSBasic *parent, bool p
 
 OBSBasicTransform::~OBSBasicTransform()
 {
-	OBSDataAutoRelease wrapper = obs_scene_save_transform_states(portrait ? portraitScene : main->GetCurrentScene(), false);
+	OBSDataAutoRelease wrapper =
+		obs_scene_save_transform_states(portrait ? portraitScene : main->GetCurrentScene(), false);
 
 	auto undo_redo = [portrait = this->portrait](const std::string &json) {
 		OBSDataAutoRelease dat = obs_data_create_from_json(json.c_str());
 		OBSSourceAutoRelease source = obs_get_source_by_uuid(obs_data_get_string(dat, "scene_uuid"));
-		if (!portrait)
+		if (!portrait) {
 			OBSBasic::Get()->SetCurrentScene(source.Get(), true);
+		}
 		obs_scene_load_transform_states(json.c_str());
 	};
 
 	std::string redo_data(obs_data_get_json(wrapper));
 	if (undo_data.compare(redo_data) != 0) {
-		main->undo_s.add_action(
-			QTStr("Undo.Transform").arg(obs_source_get_name(obs_scene_get_source(portrait ? portraitScene : main->GetCurrentScene()))),
-			undo_redo, undo_redo, undo_data, redo_data);
+		main->undo_s.add_action(QTStr("Undo.Transform")
+						.arg(obs_source_get_name(obs_scene_get_source(
+							portrait ? portraitScene : main->GetCurrentScene()))),
+					undo_redo, undo_redo, undo_data, redo_data);
 		main->SaveProject();
 	}
 }
