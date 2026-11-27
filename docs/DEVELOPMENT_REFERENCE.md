@@ -20,6 +20,12 @@ Fork adaptation: existing tests failed because `ci.toml` omitted Simulcast's two
 
 Validation: regression tests on pre-import products ran 118 tests with 10 failures and 6 errors; the imported products pass 241 focused tests. A separate policy/gate suite passes 209 tests after the fork metadata adaptation (overlapping suites, not 450 unique tests). Shell syntax and whitespace checks pass. Published-head GitHub Actions validation is pending; no live apt/container test, application compile, package generation or hardware verification is claimed. Platform effect is CI tooling, including the inherited Windows runner; release/platform availability is unchanged. Batches B–E remain outstanding, as do unrelated baseline CI failures. Reverse the seven integration commits and policy adaptation to roll back this batch.
 
+### Follow-up baseline corrections in PR #4
+
+The first implementation [Actions run 45971550741](https://github.com/NotADeveloper4665/Simulcast-Studio/actions/runs/45971550741) reports the existing unused Linux-only `Instant` import and frontend formatting failures. Commit `dded03bbf` carries forward PR #3's source-only compiler fixes (`d31f485` and `7a03eded`) rather than redoing them. Commit `18adb52ee` applies the pinned clang-format 22.1.3 to 14 frontend files, changing only whitespace/configured braces; the full 6,455-file formatter check passes. Keep these baseline repairs separate from the seven upstream CI imports for review/rollback. They preserve the existing feature implementations.
+
+The full 410-script Python self-test sweep reports additional failures outside the passing targeted suites, including AppImage, build-group and project-identity checks. Not all are diagnosed; no blanket compatibility or green-CI claim is made. Published-head validation and the remaining baseline investigation are required before merging. No generated application package or hardware result is associated with this batch.
+
 ## 1. Identity and source lineage
 
 OBS (2012) → OBS Studio (2014 cross-platform rewrite) → obs-rust/obs-studio → Simulcast Studio. Hybrid Rust/C/C++ with inherited Qt frontend and OBS C ABI; not a completely Rust application. Linux-first, independent community fork. Preserve upstream history, credits, notices, ABI and config identity. AI-assisted development is explicitly disclosed; generated tests are not proof of production reliability. Host GPL-2.0-or-later; component licenses differ.

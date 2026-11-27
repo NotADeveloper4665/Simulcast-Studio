@@ -29,6 +29,14 @@ Local evidence:
 
 These are local mocked/script and policy tests, not a live apt-container recovery, full compiler build, package or hardware result. GitHub Actions must verify the published head. Existing unrelated frontend/Rust baseline failures remain separate; neither their tests nor required gates were weakened. Batches B–E remain unimplemented. Revert the integration commits in reverse order and the accompanying fork-policy adaptation to roll back batch A.
 
+### Baseline corrections after the first implementation run
+
+[Actions run 45971550741](https://github.com/NotADeveloper4665/Simulcast-Studio/actions/runs/45971550741) reproduced the unconditional Linux-only `Instant` import and existing frontend formatting failures before broader validation could finish. Commit `dded03bbf` reuses the two source corrections already prepared in PR #3: typed Qt shortcuts, a bounded scene-index conversion, and the Linux-only import. This avoids implementing the same fix a second way. PR #3 itself remains separate and unmerged.
+
+Commit `18adb52ee` applies the repository-pinned clang-format 22.1.3 to 14 existing Simulcast frontend files. The formatter's configured brace insertion and whitespace changes are the only differences from its parent; no other statements, expressions or identifiers changed. The full 6,455-file C/C++ formatting check passes afterward. These compiler/formatting corrections are separate commits from the upstream imports; no canvas, capture, filter, recording or output design was replaced.
+
+A full 410-script Python self-test sweep was also attempted. It reports failures beyond the imported/policy coverage (including AppImage, build-group and identity checks). These have not all been diagnosed or waived. Thus the 241-test and 209-test results above do not establish a green overall baseline. No test expectation or required gate was weakened to conceal these failures.
+
 ## Verified baseline and scope
 
 - Simulcast master: `f1aabe69c274cc17762427a183520e8479721edd`.
