@@ -6,6 +6,11 @@ use ort::{session::Session, value::Tensor};
 use std::{sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 pub const W: usize = 256;
 pub const H: usize = 144;
+pub const MAX_MASK_AGE: Duration = Duration::from_millis(350);
+
+fn fresh(captured: Instant, now: Instant) -> bool {
+    now.saturating_duration_since(captured) < MAX_MASK_AGE
+}
 const MODEL: &[u8] = include_bytes!(env!("SIMULCAST_MODEL_PATH"));
 pub struct Job { pub rgb: Vec<u8>, pub model: String, pub generation: u64, pub captured: Instant }
 pub struct Mask { pub alpha: Vec<u8>, pub generation: u64, pub captured: Instant }
@@ -62,6 +67,7 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
             Ok(j)=>j, Err(crossbeam_channel::RecvTimeoutError::Timeout)=>continue, Err(_)=>break
         };
         if stop.load(Ordering::Acquire) { break; }
+        if !fresh(job.captured, Instant::now()) { continue; }
         if path.as_deref() != Some(job.model.as_str()) {
             path = Some(job.model.clone()); gpu = true;
             session = match std::panic::catch_unwind(|| load(&job.model,true).or_else(|_|load(&job.model,false))) {
@@ -70,6 +76,9 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
                 Err(_)=>{eprintln!("Simulcast ONNX runtime initialization failed");None}
             };
         }
+        // Model loading may take longer than the frame freshness budget.
+        if stop.load(Ordering::Acquire) { break; }
+        if !fresh(job.captured, Instant::now()) { continue; }
         if let Some(s) = session.as_mut() {
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| infer(s,&job.rgb))) {
                 Ok(Ok(alpha)) => { if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha,generation:job.generation,captured:job.captured}); } }
@@ -85,6 +94,12 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn freshness_boundary() {
+        let captured = Instant::now();
+        assert!(fresh(captured, captured));
+        assert!(fresh(captured, captured + MAX_MASK_AGE - Duration::from_millis(1)));
+        assert!(!fresh(captured, captured + MAX_MASK_AGE));
+    }
     #[test] fn rgb_contract() {
         let mut rgb=vec![0;W*H*3]; rgb[0]=255; rgb[1]=128;
         let a=preprocess(&rgb);
