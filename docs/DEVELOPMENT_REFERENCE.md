@@ -34,6 +34,10 @@ Several Windows and macOS Rust jobs in [run 45956743027](https://github.com/NotA
 
 With CMake and Ninja available, 182 focused CI, policy, and configuration tests passed. The pinned formatter and a standalone C check for the title contract also passed. GitHub Actions remains the validation for the cross-platform audio link and the full application builds. This follow-up does not produce a package or establish hardware behavior. Revert the CI follow-up commit to undo these repairs independently of the upstream imports.
 
+The next follow-up repairs the AppImage smoke test's version parsing and socket lookup in `build-aux/appimage/test-appimage.sh`. Loader warnings can precede either product's version, and the Simulcast package checks use the dotted socket prefix from `AppIdentity.hpp`. The inherited README tests and upstream testimonial renderer now read `README.obs-rust.md`, where that content lives. Package, metainfo, widget, and issue-routing tests verify Simulcast's existing identity and retain the separate OBS expectations. Inherited release notes use the installed GUI and bundle names.
+
+The AppImage, package identity and document checks passed 85 tests. The targeted widget and advisory suite passed with two live Qt checks skipped for lack of a local Qt test prefix. The issue routing and advisory checks passed. These checks exercise local fixtures and scripts. Full packaged AppImage behavior and native builds remain GitHub Actions validation targets. Revert this follow-up independently to restore the previous test and documentation paths.
+
 ## 1. Identity and source lineage
 
 OBS (2012) → OBS Studio (2014 cross-platform rewrite) → obs-rust/obs-studio → Simulcast Studio. Hybrid Rust/C/C++ with inherited Qt frontend and OBS C ABI; not a completely Rust application. Linux-first, independent community fork. Preserve upstream history, credits, notices, ABI and config identity. AI-assisted development is explicitly disclosed; generated tests are not proof of production reliability. Host GPL-2.0-or-later; component licenses differ.

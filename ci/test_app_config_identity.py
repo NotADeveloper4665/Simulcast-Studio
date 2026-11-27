@@ -418,25 +418,25 @@ class InstalledAppIdentityTest(unittest.TestCase):
                 build / "app.desktop"
             ).read_text()
 
-    def test_rust_installed_identity_and_private_libraries(self):
+    def test_simulcast_installed_identity_and_private_libraries(self):
         identity, desktop = self.configure(True)
         self.assertEqual(
             identity,
             [
-                "io.github.obs_rust.OBSStudioRust",
-                "io.github.obs_rust.OBSStudioRust",
-                "OBS-Studio-Rust",
-                "obs-studio-rust-gui",
+                "io.github.notadeveloper4665.SimulcastStudio",
+                "io.github.notadeveloper4665.SimulcastStudio",
+                "Simulcast Studio",
+                "simulcast-studio",
                 "lib/obs-studio-rust",
                 "lib/obs-studio-rust/obs-modules",
                 "share/obs-studio-rust",
                 "$ORIGIN/;$ORIGIN/../lib/obs-studio-rust",
             ],
         )
-        self.assertIn("Name=OBS-Studio-Rust\n", desktop)
-        self.assertIn("Exec=obs-studio-rust-gui\n", desktop)
-        self.assertIn("Icon=io.github.obs_rust.OBSStudioRust\n", desktop)
-        self.assertIn("StartupWMClass=obs-studio-rust-gui\n", desktop)
+        self.assertIn("Name=Simulcast Studio\n", desktop)
+        self.assertIn("Exec=simulcast-studio\n", desktop)
+        self.assertIn("Icon=io.github.notadeveloper4665.SimulcastStudio\n", desktop)
+        self.assertIn("StartupWMClass=simulcast-studio\n", desktop)
 
     def test_upstream_installed_identity_stays_compatible(self):
         identity, desktop = self.configure(False)
@@ -534,9 +534,9 @@ class InstanceIdentityTest(unittest.TestCase):
                     check=True,
                     capture_output=True,
                 )
-                own = "/io/github/obs_rust/OBSStudioRust" if rust else "/com/obsproject"
+                own = "/io.github.notadeveloper4665.SimulcastStudio" if rust else "/com/obsproject"
                 other = (
-                    "/com/obsproject" if rust else "/io/github/obs_rust/OBSStudioRust"
+                    "/com/obsproject" if rust else "/io.github.notadeveloper4665.SimulcastStudio"
                 )
                 fixture = f"entry @{own} 10 test\nentry @{other} 20 test\nentry @{other} 21 test\n"
                 lines = subprocess.check_output(

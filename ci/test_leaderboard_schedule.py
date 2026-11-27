@@ -120,7 +120,7 @@ class ConversionBadgeTest(unittest.TestCase):
                 self.assertEqual(mod.main(["--json", str(output), "--check"]), 1)
 
     def test_badges_are_next_to_conversion_graph(self):
-        readme = (WORKFLOW.parent.parent.parent / "README.md").read_text()
+        readme = (WORKFLOW.parent.parent.parent / "README.obs-rust.md").read_text()
         section = readme.split("# Conversion progress", 1)[1].split("# Features", 1)[0]
         self.assertIn("img.shields.io/endpoint?url=", section)
         self.assertIn("conversion-badge.json", section)
@@ -144,7 +144,7 @@ class LeaderboardScheduleTest(unittest.TestCase):
         self.assertNotIn("steps.gate", self.text)
 
     def test_readme_badge_points_at_workflow(self):
-        readme = (WORKFLOW.parent.parent.parent / "README.md").read_text()
+        readme = (WORKFLOW.parent.parent.parent / "README.obs-rust.md").read_text()
         self.assertIn("actions/workflows/leaderboard.yml/badge.svg?branch=master", readme)
 
     def test_still_dispatchable(self):

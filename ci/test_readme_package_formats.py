@@ -18,7 +18,7 @@ FORMATS = {"AppImage": r"\.AppImage\b", ".deb": r"\.deb\b", "Flatpak": r"\.flatp
 
 class ReadmePackageFormatsTest(unittest.TestCase):
     def test_setups_the_readme_names_are_released(self):
-        readme = (ROOT / "README.md").read_text()
+        readme = (ROOT / "README.obs-rust.md").read_text()
         release = (ROOT / ".github/workflows/release-rust.yaml").read_text()
         setup = re.search(r"on your setup \(([^)]*)\)", " ".join(readme.split()))
         self.assertIsNotNone(setup, "README lost its 'on your setup (...)' list")
@@ -28,7 +28,7 @@ class ReadmePackageFormatsTest(unittest.TestCase):
                     self.assertRegex(release, asset, f"README asks about {name}, but no release ships one")
 
     def test_readme_names_the_released_flatpak(self):
-        readme = " ".join((ROOT / "README.md").read_text().split())
+        readme = " ".join((ROOT / "README.obs-rust.md").read_text().split())
         release = (ROOT / ".github/workflows/release-rust.yaml").read_text()
         self.assertRegex(release, FORMATS["Flatpak"])
         self.assertIn("flatpak install --user ./OBS-Studio-Rust-*-linux-x86_64.flatpak", readme)

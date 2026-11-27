@@ -6,3 +6,6 @@ contact_links:
   - name: Simulcast Studio issues
     url: https://github.com/NotADeveloper4665/Simulcast-Studio/issues
     about: Report bugs, suggest features, or ask about current development.
+  - name: OBS Studio Rust feature ideas
+    url: https://github.com/obs-rust/obs-studio/discussions/categories/ideas
+    about: Suggest ideas specifically for the upstream OBS Studio Rust project.

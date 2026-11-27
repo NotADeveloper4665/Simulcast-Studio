@@ -40,6 +40,8 @@ def version_line(output: str) -> str:
 class AppImageVersionLineTest(unittest.TestCase):
     def test_loader_warning_before_the_version_is_skipped(self):
         self.assertEqual(version_line(f"{WARNING}\n{VERSION}"), VERSION)
+        simulcast = "Simulcast Studio 0.1.0"
+        self.assertEqual(version_line(f"{WARNING}\n{simulcast}"), simulcast)
 
     def test_plain_version_output(self):
         self.assertEqual(version_line(VERSION), VERSION)
@@ -48,12 +50,12 @@ class AppImageVersionLineTest(unittest.TestCase):
     def test_no_version_line_gives_nothing(self):
         self.assertEqual(version_line(WARNING), "")
 
-    def test_both_checks_use_the_version_line(self):
+    def test_version_and_packaging_identity_checks_use_the_version_line(self):
         source = SCRIPT.read_text()
         for check in (
             '[[ "$VERSION_LINE" != OBS-Studio-Rust* ]]',
             '[[ "$VERSION_LINE" != "OBS-Studio-Rust $EXPECT_RUST_VERSION (based on OBS "* ]]',
-            '[[ "$VERSION_LINE" == OBS-Studio-Rust* ]]',  # Rust paths and identity
+            '[[ "$VERSION_LINE" == "Simulcast Studio"* ]]',  # Simulcast AppDir layout
         ):
             self.assertTrue(check in source, f"test-appimage.sh lacks {check}")
         # Only the version line decides; the raw output may start with a warning.

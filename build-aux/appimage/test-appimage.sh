@@ -277,7 +277,8 @@ chmod +x "$APPIMAGE"
 # The first line of `obs --version` output (stdout and stderr) that names
 # OBS, so loader warnings printed before it don't count as the version.
 app_version_line() {
-    printf '%s\n' "$1" | grep -m1 -E '^OBS' || true
+    # Keep loader diagnostics out of the version check for both product names.
+    printf '%s\n' "$1" | grep -m1 -E '^(OBS[- ]|Simulcast Studio )' || true
 }
 
 echo "::group::AppImage runs through its own runtime (no FUSE in containers)"
@@ -331,7 +332,7 @@ PACKAGE_MODULES="$APPDIR/usr/lib/obs-modules"
 if [[ "$VERSION_LINE" == "Simulcast Studio"* ]]; then
     GUI_NAME=simulcast-studio
     CONFIG_NAME=obs-studio-rust
-    INSTANCE_PREFIX=@/io/github/notadeveloper4665/SimulcastStudio
+    INSTANCE_PREFIX=@/io.github.notadeveloper4665.SimulcastStudio
     PACKAGE_DATA="$APPDIR/usr/share/obs-studio-rust"
     PACKAGE_MODULES="$APPDIR/usr/lib/obs-studio-rust/obs-modules"
     APP_ID=io.github.notadeveloper4665.SimulcastStudio

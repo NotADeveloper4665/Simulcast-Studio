@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "appimage.yaml"
-README = ROOT / "README.md"
+README = ROOT / "README.obs-rust.md"
 
 # Matrix image -> how the README names it.
 NAMES = {

@@ -72,7 +72,13 @@ STUBS=r'''
 #define __bridge
 using id=void*;using HWND=void*;using WId=uintptr_t;
 namespace Qt{constexpr int WA_PaintOnScreen=1;}
-struct QIcon{std::string name;QIcon(const char *value):name(value){}static QIcon fromTheme(const char *name,const QIcon &fallback){assert(std::string(name)=="obs"&&fallback.name==":/res/images/obs.png");return QIcon("theme:obs");}};
+// Linux uses the fork desktop icon. The other host implementations retain their theme lookup.
+#if defined(_WIN32) || defined(__APPLE__)
+constexpr const char *expectedThemeIcon = "obs";
+#else
+constexpr const char *expectedThemeIcon = "io.github.notadeveloper4665.SimulcastStudio";
+#endif
+struct QIcon{std::string name;QIcon(const char *value):name(value){}static QIcon fromTheme(const char *name,const QIcon &fallback){assert(std::string(name)==expectedThemeIcon&&fallback.name==":/res/images/obs.png");return QIcon("theme:obs");}};
 struct QWidget{int attributes=0,icons=0;bool paint=true;void setAttribute(int key,bool value=true){assert(key==1);++attributes;paint=value;}void setWindowIcon(const QIcon &icon){assert(icon.name=="theme:obs");++icons;}};
 struct QWindow{WId handle=0x12345;int reads=0;WId winId(){++reads;return handle;}};
 struct gs_window{void *hwnd=(void*)1,*view=(void*)2;uint32_t id=3;void *display=(void*)4;};

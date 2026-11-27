@@ -71,7 +71,8 @@ from pathlib import Path
 REPO = "obs-rust/obs-studio"
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(__file__).resolve().parent / "user_quotes.json"
-README = ROOT / "README.md"
+# These testimonials describe OBS Studio Rust and live in its preserved README.
+README = ROOT / "README.obs-rust.md"
 START = "<!-- user-quotes:start -->"
 END = "<!-- user-quotes:end -->"
 FIELDS = ("text", "login", "url", "date", "status")  # every entry, in this order (the header)
@@ -301,7 +302,7 @@ def main() -> int:
     out = render(text, data)
     if args.cmd == "render" and args.check:
         if out != text:
-            print("README.md user quotes are stale: run uv run tools/user_quotes.py render", file=sys.stderr)
+            print("README.obs-rust.md user quotes are stale: run uv run tools/user_quotes.py render", file=sys.stderr)
             return 1
         return 0
     README.write_text(out)
