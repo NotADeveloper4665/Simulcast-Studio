@@ -18,9 +18,6 @@
 
 #include "frontend/build/frontend-settings.pch.hpp"
 
-#include <QFileDialog>
-#include <QSignalBlocker>
-
 using namespace std;
 
 extern const char *get_simple_output_encoder(const char *encoder);

@@ -1,7 +1,5 @@
 #include "frontend/build/frontend-widgets.pch.hpp"
 
-#include <QTimer>
-
 OBSBasicControls::OBSBasicControls(OBSBasic *main) : QFrame(nullptr), ui(new Ui::OBSBasicControls)
 {
 	/* Create UI elements */

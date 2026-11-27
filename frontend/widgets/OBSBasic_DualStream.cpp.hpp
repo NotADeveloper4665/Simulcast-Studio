@@ -15,28 +15,6 @@
 
 #include "frontend/build/frontend-widgets.pch.hpp"
 
-#include <QDateTime>
-#include <QJsonDocument>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QKeySequence>
-#include <QAction>
-#include <QToolBar>
-#include <QInputDialog>
-#include <QAbstractItemModel>
-#include <QMouseEvent>
-#include <QStyle>
-#include <QDropEvent>
-#include <QStyledItemDelegate>
-#include <QStyleOptionViewItem>
-#include <QPainter>
-#include <utility/display-helpers.hpp>
-#include <functional>
-#include <QDir>
-#include <QFileInfo>
-#include <QStandardPaths>
-#include <limits>
-
 namespace {
 constexpr char VerticalCanvasName[] = "Dual Stream Vertical";
 constexpr char VerticalSceneName[] = "Vertical Program";

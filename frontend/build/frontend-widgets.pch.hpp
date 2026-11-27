@@ -5,6 +5,23 @@
 
 #pragma once
 
+/* Dependencies used by the Simulcast controls in this unity group. */
+#include <QAbstractItemModel>
+#include <QDateTime>
+#include <QDropEvent>
+#include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QKeySequence>
+#include <QMouseEvent>
+#include <QStandardPaths>
+#include <QStyle>
+#include <QStyleOptionViewItem>
+#include <QStyledItemDelegate>
+#include <functional>
+#include <limits>
+
 /* widgets/AudioMixer.cpp */
 #include "frontend/widgets/AudioMixer.hpp"
 

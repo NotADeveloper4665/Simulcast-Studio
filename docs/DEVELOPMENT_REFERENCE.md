@@ -26,6 +26,14 @@ The first implementation [Actions run 45971550741](https://github.com/NotADevelo
 
 The full 410-script Python self-test sweep reports additional failures outside the passing targeted suites, including AppImage, build-group and project-identity checks. Not all are diagnosed; no blanket compatibility or green-CI claim is made. Published-head validation and the remaining baseline investigation are required before merging. No generated application package or hardware result is associated with this batch.
 
+### CI follow-up on PR #4
+
+The hosted Fast Gate in [run 45972450070](https://github.com/NotADeveloper4665/Simulcast-Studio/actions/runs/45972450070) passed formatting and stopped at the scripting platform check. The scripting header now selects its printf annotation by compiler capability family (GCC-compatible compilers, excluding SWIG), with the existing MinGW format dialect. The frontend settings and widget implementation files now get their includes from their existing precompiled headers, and the widget group includes its members in alphabetical order.
+
+Several Windows and macOS Rust jobs in [run 45956743027](https://github.com/NotADeveloper4665/Simulcast-Studio/actions/runs/45956743027) failed to link because the independent C audio oracle exported the same master-volume setter as the Rust implementation. The oracle now follows its existing symbol-renaming convention for this setter. The production C ABI and gain processing retain their names and behavior. The fork's title fixture now expects the truncated Simulcast label while keeping its length and termination assertions. The Fedora alpha AppImage assembly step invokes its existing script through uv, installed in the Fedora build job.
+
+With CMake and Ninja available, 182 focused CI, policy, and configuration tests passed. The pinned formatter and a standalone C check for the title contract also passed. GitHub Actions remains the validation for the cross-platform audio link and the full application builds. This follow-up does not produce a package or establish hardware behavior. Revert the CI follow-up commit to undo these repairs independently of the upstream imports.
+
 ## 1. Identity and source lineage
 
 OBS (2012) → OBS Studio (2014 cross-platform rewrite) → obs-rust/obs-studio → Simulcast Studio. Hybrid Rust/C/C++ with inherited Qt frontend and OBS C ABI; not a completely Rust application. Linux-first, independent community fork. Preserve upstream history, credits, notices, ABI and config identity. AI-assisted development is explicitly disclosed; generated tests are not proof of production reliability. Host GPL-2.0-or-later; component licenses differ.

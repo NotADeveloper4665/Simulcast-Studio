@@ -37,7 +37,8 @@ typedef void (*defer_call_cb)(void *param);
 
 extern void defer_call_post(defer_call_cb call, void *cb);
 
-#if !defined(_MSC_VER) && !defined(SWIG)
+/* GCC-compatible compilers check the format. SWIG parses plain declarations. */
+#if defined(__GNUC__) && !defined(SWIG)
 #if defined(__MINGW32__)
 #define SCRIPT_PRINTF(format, args) __attribute__((__format__(__gnu_printf__, format, args)))
 #else

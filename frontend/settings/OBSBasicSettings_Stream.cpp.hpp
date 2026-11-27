@@ -1,9 +1,4 @@
 #include "frontend/build/frontend-settings.pch.hpp"
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QSignalBlocker>
-#include <QListWidget>
-#include <QUrl>
 
 static void setup_ladder_table(QTableWidget *table);
 
