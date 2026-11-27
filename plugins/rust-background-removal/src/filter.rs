@@ -1,6 +1,6 @@
-use crate::{ffi::*, inference::{self, Job, Mask, W, H}};
+use crate::{ffi::*, inference::{self, Job, Mask, W, H, MAX_MASK_AGE}};
 use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
-use std::{cell::UnsafeCell, ffi::{c_void, c_char, CStr}, ptr, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}, thread::JoinHandle, time::{Duration, Instant}};
+use std::{cell::UnsafeCell, ffi::{c_void, c_char, CStr}, ptr, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, Ordering}}, thread::JoinHandle, time::Instant};
 
 #[derive(Clone)]
 struct Settings { model: String, threshold: f32, feather: f32, revision: u64 }
@@ -206,7 +206,7 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
     if let Ok(mut slot)=f.result.try_lock() {
         if let Some(m)=slot.take() {
             if m.generation==r.generation {
-                if m.captured.elapsed()<Duration::from_millis(350) && m.alpha.len()==W*H {
+                if m.captured.elapsed()<MAX_MASK_AGE && m.alpha.len()==W*H {
                     gs_texture_set_image(r.mask,m.alpha.as_ptr(),W as u32,false);
                     r.last_mask=Some(m.captured);
                 } else { r.last_mask=None; }
@@ -217,7 +217,7 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
     if !r.frame_valid { return; }
     let tex=gs_texrender_get_texture(r.capture);
     if tex.is_null() { return; }
-    let ready=r.last_mask.is_some_and(|t|t.elapsed()<Duration::from_millis(350));
+    let ready=r.last_mask.is_some_and(|t|t.elapsed()<MAX_MASK_AGE);
     if !ready { return; }
     let e=r.effect;
     gs_effect_set_texture(r.params[0],tex);
