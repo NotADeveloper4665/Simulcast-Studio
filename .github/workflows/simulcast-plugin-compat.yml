@@ -1,12 +1,12 @@
 name: OBS plugin compatibility (Fedora)
 on:
   push:
-    branches: [feature/obs-plugin-compatibility]
+    branches: [feature/obs-plugin-compatibility, fix/background-removal-technical-debt]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: simulcast-plugin-compat
+  group: simulcast-plugin-compat-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   build:
