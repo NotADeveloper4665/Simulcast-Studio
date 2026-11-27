@@ -2,6 +2,14 @@
 
 Snapshot: 2026-11-26. Audience: maintainers and AI coding agents. Read this before making architectural, packaging or compatibility decisions. Update it when behavior changes; verify branch HEAD and CI before treating this snapshot as current. Source and tests override this summary. This file documents decisions, not a claim of complete runtime validation.
 
+## Upstream integration planning — 2026-11-27
+
+See [the upstream integration plan](upstream-integration-plan.md) for the pinned commit/PR ledger, dependency batches, Simulcast adaptation points, code-comment requirements and regression gates. Review pins: Simulcast master `f1aabe69c274cc17762427a183520e8479721edd`, upstream `723cd1c803bdee2e57f782a969203de768d45677`, common ancestor `fa6e0bebb4e74b721d79de85448f0c3cbdfa8759`. Upstream is 40 commits ahead / 30 behind this fork. All 40 merged PRs are classified; 74 open PRs were inventoried and triaged, with selected source/caller review.
+
+Individual commit file lists contain 315 unique paths (the aggregate comparison caps at 300). None directly overlaps paths changed by Simulcast master, compatibility or macOS branches since the common ancestor; source/filter/frame/audio APIs still have significant behavioral integration risk. Preserve shared-capture clone groups, private portrait Program layouts, master gain, standard recording/API behavior, distinct background-removal implementations, branding and platform security. The plan is documentation only: no upstream code was imported, no new build generated, and no hardware claim made.
+
+Upstream master push run [45962407898](https://github.com/obs-rust/obs-studio/actions/runs/45962407898) succeeded at the pinned head. Existing Simulcast compiler-repair PR [#3](https://github.com/NotADeveloper4665/Simulcast-Studio/pull/3) remains separate; its final-head run [45956743027](https://github.com/NotADeveloper4665/Simulcast-Studio/actions/runs/45956743027) failed. Integration must resolve baseline failures and validate each batch through GitHub Actions before release. Open PRs and upstream infrastructure optimizations are proposals, not available alpha features. Rollback of this planning documentation changes no runtime behavior.
+
 ## 1. Identity and source lineage
 
 OBS (2012) → OBS Studio (2014 cross-platform rewrite) → obs-rust/obs-studio → Simulcast Studio. Hybrid Rust/C/C++ with inherited Qt frontend and OBS C ABI; not a completely Rust application. Linux-first, independent community fork. Preserve upstream history, credits, notices, ABI and config identity. AI-assisted development is explicitly disclosed; generated tests are not proof of production reliability. Host GPL-2.0-or-later; component licenses differ.
