@@ -391,9 +391,9 @@ void OBSBasic::RefreshVerticalScenes()
 			entry->setData(Qt::UserRole, uuid);
 		}
 	}
-	const int index = order.indexOf(verticalSceneUuid);
-	if (index >= 0 && verticalScenes->currentRow() != index)
-		verticalScenes->setCurrentRow(index);
+	const auto index = order.indexOf(verticalSceneUuid);
+	if (index >= 0 && index < verticalScenes->count() && verticalScenes->currentRow() != index)
+		verticalScenes->setCurrentRow(static_cast<int>(index));
 	UpdateVerticalStudioUI();
 }
 
@@ -1503,7 +1503,7 @@ void OBSBasic::InitDualStreamDock()
 	});
 	timer->start(250);
 	verticalPreview->setFocusPolicy(Qt::StrongFocus);
-	auto nudge = [this](int key, int dx, int dy) {
+	auto nudge = [this](QKeyCombination key, int dx, int dy) {
 		auto *action = new QAction(verticalPreview);
 		action->setShortcut(QKeySequence(key));
 		action->setShortcutContext(Qt::WidgetShortcut);
