@@ -51,12 +51,19 @@ impl Render {
     fn valid(&self) -> bool {
         !self.capture.is_null() && !self.resize.is_null() && !self.mask.is_null() && !self.effect.is_null() && self.stages.iter().all(|s| !s.is_null()) && self.params.iter().all(|p| !p.is_null())
     }
-    unsafe fn free(&mut self) {
+}
+impl Drop for Render {
+    fn drop(&mut self) {
+        // Graphics resources must be destroyed with the OBS graphics context held.
+        unsafe {
+        obs_enter_graphics();
         if !self.capture.is_null() { gs_texrender_destroy(self.capture); }
         if !self.resize.is_null() { gs_texrender_destroy(self.resize); }
         for s in self.stages { if !s.is_null() { gs_stagesurface_destroy(s); } }
         if !self.mask.is_null() { gs_texture_destroy(self.mask); }
         if !self.effect.is_null() { gs_effect_destroy(self.effect); }
+        obs_leave_graphics();
+        }
     }
 }
 unsafe fn read_settings(s: *mut obs_data_t, revision: u64) -> Settings {
@@ -111,10 +118,12 @@ unsafe extern "C" fn destroy(data: *mut c_void) {
     if data.is_null() { return; }
     let mut f=Box::from_raw(data.cast::<Filter>());
     f.stop.store(true,Ordering::Release);
+    let _ = f.evict.try_recv();
+    // Disconnect the job channel so an idle worker wakes immediately.
+    let (closed, _) = bounded(0);
+    drop(std::mem::replace(&mut f.tx, closed));
     if let Some(t)=f.worker.take() { let _=t.join(); }
-    obs_enter_graphics();
-    f.render.get_mut().free();
-    obs_leave_graphics();
+    // Render owns graphics resources and drops them after the worker joins.
 }
 fn latest(f: &Filter, job: Job) {
     if let Err(TrySendError::Full(job)) = f.tx.try_send(job) {
