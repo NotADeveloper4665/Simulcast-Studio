@@ -26,6 +26,7 @@ struct Render {
     write: usize,
     mask: *mut gs_texture_t,
     effect: *mut gs_effect_t,
+    params: [*mut gs_eparam_t; 5],
     dimensions: (u32,u32),
     revision: u64,
     generation: u64,
@@ -35,17 +36,20 @@ struct Render {
 impl Render {
     unsafe fn new() -> Self {
         let effect = gs_effect_create(concat!(include_str!("../data/background-removal.effect"), "\0").as_ptr().cast(), c"background-removal.effect".as_ptr(), ptr::null_mut());
+        let params = if effect.is_null() { [ptr::null_mut(); 5] } else {
+            [c"image", c"mask", c"threshold", c"feather", c"enabled"].map(|name| gs_effect_get_param_by_name(effect, name.as_ptr()))
+        };
         Self {
             capture: gs_texrender_create(GS_RGBA, GS_ZS_NONE),
             resize: gs_texrender_create(GS_RGBA, GS_ZS_NONE),
             stages: [gs_stagesurface_create(W as u32,H as u32,GS_RGBA),gs_stagesurface_create(W as u32,H as u32,GS_RGBA)],
             staged: [None,None], write: 0,
             mask: gs_texture_create(W as u32,H as u32,GS_R8,1,ptr::null_mut(),GS_DYNAMIC),
-            effect, dimensions:(0,0), revision:0, generation:0, last_mask:None, frame_valid:false,
+            effect, params, dimensions:(0,0), revision:0, generation:0, last_mask:None, frame_valid:false,
         }
     }
     fn valid(&self) -> bool {
-        !self.capture.is_null() && !self.resize.is_null() && !self.mask.is_null() && !self.effect.is_null() && self.stages.iter().all(|s| !s.is_null())
+        !self.capture.is_null() && !self.resize.is_null() && !self.mask.is_null() && !self.effect.is_null() && self.stages.iter().all(|s| !s.is_null()) && self.params.iter().all(|p| !p.is_null())
     }
     unsafe fn free(&mut self) {
         if !self.capture.is_null() { gs_texrender_destroy(self.capture); }
@@ -90,7 +94,8 @@ unsafe extern "C" fn create(s: *mut obs_data_t, source: *mut obs_source_t) -> *m
     let render = Render::new();
     
     obs_leave_graphics();
-    // Retain the filter even if graphics initialization fails; draw nothing.
+    // Retain fail-closed behavior, but report unusable graphics resources.
+    if !render.valid() { eprintln!("Simulcast background removal: graphics initialization failed"); }
     Box::into_raw(Box::new(Filter { source, dirty:AtomicBool::new(true), width:AtomicU32::new(0),height:AtomicU32::new(0), settings:Mutex::new(read_settings(s,0)),render:UnsafeCell::new(render),tx,evict,result,stop,worker:Some(worker) })).cast()
 }
 unsafe extern "C" fn update(data: *mut c_void,s: *mut obs_data_t) {
@@ -215,11 +220,11 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
     let ready=r.last_mask.is_some_and(|t|t.elapsed()<Duration::from_millis(350));
     if !ready { return; }
     let e=r.effect;
-    gs_effect_set_texture(gs_effect_get_param_by_name(e,c"image".as_ptr()),tex);
-    gs_effect_set_texture(gs_effect_get_param_by_name(e,c"mask".as_ptr()),r.mask);
-    gs_effect_set_float(gs_effect_get_param_by_name(e,c"threshold".as_ptr()),settings.threshold);
-    gs_effect_set_float(gs_effect_get_param_by_name(e,c"feather".as_ptr()),settings.feather);
-    gs_effect_set_float(gs_effect_get_param_by_name(e,c"enabled".as_ptr()),if ready {1.} else {0.});
+    gs_effect_set_texture(r.params[0],tex);
+    gs_effect_set_texture(r.params[1],r.mask);
+    gs_effect_set_float(r.params[2],settings.threshold);
+    gs_effect_set_float(r.params[3],settings.feather);
+    gs_effect_set_float(r.params[4],1.);
     gs_blend_state_push();
     gs_blend_function(GS_BLEND_ONE,GS_BLEND_INVSRCALPHA);
     while gs_effect_loop(e,c"Draw".as_ptr()) { gs_draw_sprite(tex,0,w,h); }
