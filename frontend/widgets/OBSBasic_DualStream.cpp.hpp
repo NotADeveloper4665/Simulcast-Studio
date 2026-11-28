@@ -15,6 +15,7 @@
 
 #include "frontend/build/frontend-widgets.pch.hpp"
 
+#include "OBSProjector.hpp"
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -1515,6 +1516,12 @@ void OBSBasic::InitDualStreamDock()
 			}
 
 			QMenu menu(verticalLayers);
+			OBSSource previewSource = obs_sceneitem_get_source(item);
+			if (previewSource && (obs_source_get_output_flags(previewSource) & OBS_SOURCE_VIDEO)) {
+				menu.addAction(tr("Open Source Preview"), this, [this, previewSource] {
+					OpenProjector(previewSource, -1, ProjectorType::Source);
+				});
+			}
 			menu.addAction(tr("Clone Source (Independent Filters)"), this, [this, id] {
 				auto target = GetVerticalScene(false);
 				if (target)
