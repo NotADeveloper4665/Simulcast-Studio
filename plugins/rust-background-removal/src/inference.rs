@@ -2,7 +2,7 @@
 // Model and reference contract: MediaPipe Selfie Segmentation (landscape),
 // Google LLC (Apache-2.0), as used by royshil/obs-backgroundremoval.
 use crossbeam_channel::Receiver;
-use ort::{session::Session, value::TensorRef};
+use ort::{session::{Session, RunOptions}, value::TensorRef};
 use std::{sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 pub const W: usize = 256;
 pub const H: usize = 144;
@@ -13,6 +13,7 @@ fn fresh(captured: Instant, now: Instant) -> bool {
 }
 const MODEL: &[u8] = include_bytes!(env!("SIMULCAST_MODEL_PATH"));
 pub struct Job { pub rgb: Vec<u8>, pub model: String, pub generation: u64, pub captured: Instant }
+pub type ActiveRun = Arc<Mutex<Option<Arc<RunOptions>>>>;
 pub struct Mask { pub alpha: Vec<u8>, pub generation: u64, pub captured: Instant }
 
 fn load(path: &str, gpu: bool) -> Result<Session, Box<dyn std::error::Error>> {
@@ -57,17 +58,17 @@ fn quantize(data: &[f32]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // Absolute model probability; never min/max normalize an empty foreground.
     Ok(data.iter().map(|v| (v.clamp(0.,1.)*255.).round() as u8).collect())
 }
-fn infer(session: &mut Session, rgb: &[u8], scratch: &mut ndarray::Array4<f32>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn infer(session: &mut Session, rgb: &[u8], scratch: &mut ndarray::Array4<f32>, options: &RunOptions) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if rgb.len()!=W*H*3 { return Err("invalid RGB frame".into()); }
     preprocess_into(rgb, scratch);
     let input = TensorRef::from_array_view(scratch.view())?;
-    let outputs = session.run(ort::inputs![input])?;
+    let outputs = session.run_with_options(ort::inputs![input], options)?;
     if outputs.len()==0 { return Err("no output".into()); }
     let (shape, data) = outputs[0].try_extract_tensor::<f32>()?;
     if &shape[..] != &[1,1,H as i64,W as i64] { return Err("expected [1,1,144,256] mask".into()); }
     quantize(data)
 }
-pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<AtomicBool>) {
+pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<AtomicBool>, active: ActiveRun, recycle: crossbeam_channel::Sender<Vec<u8>>) {
     let mut path: Option<String> = None;
     let mut session = None;
     let mut gpu = true;
@@ -77,7 +78,7 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
             Ok(j)=>j, Err(crossbeam_channel::RecvTimeoutError::Timeout)=>continue, Err(_)=>break
         };
         if stop.load(Ordering::Acquire) { break; }
-        if !fresh(job.captured, Instant::now()) { continue; }
+        if !fresh(job.captured, Instant::now()) { let _ = recycle.try_send(job.rgb); continue; }
         if path.as_deref() != Some(job.model.as_str()) {
             path = Some(job.model.clone()); gpu = true;
             session = match std::panic::catch_unwind(|| load(&job.model,true).or_else(|_|load(&job.model,false))) {
@@ -88,9 +89,21 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
         }
         // Model loading may take longer than the frame freshness budget.
         if stop.load(Ordering::Acquire) { break; }
-        if !fresh(job.captured, Instant::now()) { continue; }
+        if !fresh(job.captured, Instant::now()) { let _ = recycle.try_send(job.rgb); continue; }
         if let Some(s) = session.as_mut() {
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| infer(s,&job.rgb,&mut scratch))) {
+            let options = match RunOptions::new() {
+                Ok(options) => Arc::new(options),
+                Err(e) => { eprintln!("Simulcast run options: {e}"); let _ = recycle.try_send(job.rgb); continue; }
+            };
+            {
+                let Ok(mut slot) = active.lock() else { break; };
+                if stop.load(Ordering::Acquire) { break; }
+                *slot = Some(options.clone());
+            }
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| infer(s,&job.rgb,&mut scratch,&options)));
+            if let Ok(mut slot) = active.lock() { *slot = None; }
+            if stop.load(Ordering::Acquire) { break; }
+            match outcome {
                 Ok(Ok(alpha)) => { if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha,generation:job.generation,captured:job.captured}); } }
                 _ => {
                     if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha:Vec::new(),generation:job.generation,captured:job.captured}); }
@@ -99,6 +112,7 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
                 }
             }
         }
+        let _ = recycle.try_send(job.rgb);
     }
 }
 #[cfg(test)]
@@ -125,6 +139,6 @@ mod tests {
     }
     #[test] fn pinned_model_cpu_inference() {
         let mut s=load("",false).expect("bundled MediaPipe model");
-        assert_eq!(infer(&mut s,&vec![128;W*H*3], &mut ndarray::Array4::zeros((1,3,H,W))).unwrap().len(),W*H);
+        assert_eq!(infer(&mut s,&vec![128;W*H*3], &mut ndarray::Array4::zeros((1,3,H,W)), &RunOptions::new().unwrap()).unwrap().len(),W*H);
     }
 }
