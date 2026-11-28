@@ -1768,13 +1768,14 @@ void OBSBasic::InitDualStreamDock()
 		SaveProject();
 	});
 
-	// Operator-only countdown; does not modify scenes or start outputs.
+	// Optional on-air countdown uses an existing text source, never creates or removes scene items.
 	auto *countdownLabel = new QLabel(tr("Countdown: ready"), content);
 	auto *countdownSeconds = new QSpinBox(content);
 	countdownSeconds->setRange(1, 3600);
 	countdownSeconds->setValue(60);
 	countdownSeconds->setSuffix(tr(" s"));
 	auto *countdownButton = new QPushButton(tr("Start Countdown"), content);
+	auto *countdownOverlay = new QComboBox(content);
 	auto *countdownTimer = new QTimer(content);
 	countdownTimer->setInterval(100);
 	auto *countdownRow = new QHBoxLayout;
@@ -1782,36 +1783,112 @@ void OBSBasic::InitDualStreamDock()
 	countdownRow->addWidget(countdownSeconds);
 	countdownRow->addWidget(countdownButton);
 	layout->addLayout(countdownRow);
-	connect(countdownButton, &QPushButton::clicked, countdownTimer, [countdownTimer, countdownLabel, countdownSeconds, countdownButton] {
-		if (countdownTimer->isActive()) {
-			countdownTimer->stop();
-			countdownLabel->setText(tr("Countdown: ready"));
-			countdownSeconds->setEnabled(true);
-			countdownButton->setText(tr("Start Countdown"));
+	layout->addWidget(countdownOverlay);
+	auto refreshTextSources = [countdownOverlay] {
+		countdownOverlay->clear();
+		countdownOverlay->addItem(QObject::tr("Operator only"), QString());
+		obs_enum_sources([](void *data, obs_source_t *source) {
+			const QString id = QString::fromUtf8(obs_source_get_id(source));
+			if (id.startsWith(QStringLiteral("text_ft2_source")) || id.startsWith(QStringLiteral("text_gdiplus"))) {
+				OBSDataAutoRelease settings = obs_source_get_settings(source);
+				if (!obs_data_get_bool(settings, "read_from_file") && !obs_data_get_bool(settings, "from_file"))
+					static_cast<QComboBox *>(data)->addItem(QString::fromUtf8(obs_source_get_name(source)), QString::fromUtf8(obs_source_get_uuid(source)));
+			}
+			return true;
+		}, countdownOverlay);
+	};
+	auto *refreshOverlay = new QPushButton(tr("Refresh Countdown Text Sources"), content);
+	layout->addWidget(refreshOverlay);
+	connect(refreshOverlay, &QPushButton::clicked, content, refreshTextSources);
+	refreshTextSources();
+	struct CountdownState {
+		QElapsedTimer clock;
+		qint64 duration = 0;
+		QString uuid;
+		QString previous;
+		QString written;
+	};
+	auto countdown = std::make_shared<CountdownState>();
+	auto restoreOverlay = [countdown] {
+		if (countdown->uuid.isEmpty())
+			return;
+		OBSSourceAutoRelease source = obs_get_source_by_uuid(countdown->uuid.toUtf8().constData());
+		if (source) {
+			OBSDataAutoRelease settings = obs_source_get_settings(source);
+			if (QString::fromUtf8(obs_data_get_string(settings, "text")) == countdown->written) {
+				obs_data_set_string(settings, "text", countdown->previous.toUtf8().constData());
+				obs_source_update(source, settings);
+			}
+		}
+		countdown->uuid.clear();
+	};
+	auto writeOverlay = [countdown](const QString &text) {
+		if (countdown->uuid.isEmpty() || text == countdown->written)
+			return;
+		OBSSourceAutoRelease source = obs_get_source_by_uuid(countdown->uuid.toUtf8().constData());
+		if (!source) {
+			countdown->uuid.clear();
 			return;
 		}
-		countdownTimer->setProperty("durationMs", countdownSeconds->value() * 1000);
-		countdownTimer->setProperty("restartClock", true);
+		OBSDataAutoRelease settings = obs_source_get_settings(source);
+		if (QString::fromUtf8(obs_data_get_string(settings, "text")) != countdown->written) {
+			countdown->uuid.clear();
+			return;
+		}
+		obs_data_set_string(settings, "text", text.toUtf8().constData());
+		obs_source_update(source, settings);
+		countdown->written = text;
+	};
+	auto finishCountdown = [=](bool completed) {
+		countdownTimer->stop();
+		restoreOverlay();
+		countdownLabel->setText(completed ? tr("Countdown: complete") : tr("Countdown: ready"));
+		countdownSeconds->setEnabled(true);
+		countdownOverlay->setEnabled(true);
+		refreshOverlay->setEnabled(true);
+		countdownButton->setText(tr("Start Countdown"));
+	};
+	connect(countdownButton, &QPushButton::clicked, countdownTimer, [=] {
+		if (countdownTimer->isActive()) {
+			finishCountdown(false);
+			return;
+		}
+		countdown->uuid = countdownOverlay->currentData().toString();
+		if (!countdown->uuid.isEmpty()) {
+			OBSSourceAutoRelease source = obs_get_source_by_uuid(countdown->uuid.toUtf8().constData());
+			if (!source) {
+				countdown->uuid.clear();
+				return;
+			}
+			OBSDataAutoRelease settings = obs_source_get_settings(source);
+			if (obs_data_get_bool(settings, "read_from_file") || obs_data_get_bool(settings, "from_file")) {
+				countdown->uuid.clear();
+				return;
+			}
+			countdown->previous = QString::fromUtf8(obs_data_get_string(settings, "text"));
+			countdown->written = countdown->previous;
+		}
+		countdown->duration = qint64(countdownSeconds->value()) * 1000;
+		countdown->clock.start();
 		countdownLabel->setText(tr("Countdown: %1 s").arg(countdownSeconds->value()));
+		writeOverlay(QString::number(countdownSeconds->value()));
 		countdownSeconds->setEnabled(false);
+		countdownOverlay->setEnabled(false);
+		refreshOverlay->setEnabled(false);
 		countdownButton->setText(tr("Cancel"));
 		countdownTimer->start();
 	});
-	connect(countdownTimer, &QTimer::timeout, countdownTimer, [countdownTimer, countdownLabel, countdownSeconds, countdownButton, clock = QElapsedTimer{}]() mutable {
-		if (countdownTimer->property("restartClock").toBool()) {
-			clock.start();
-			countdownTimer->setProperty("restartClock", false);
-		}
-		const qint64 remaining = countdownTimer->property("durationMs").toInt() - clock.elapsed();
+	connect(countdownTimer, &QTimer::timeout, countdownTimer, [=] {
+		const qint64 remaining = countdown->duration - countdown->clock.elapsed();
 		if (remaining <= 0) {
-			countdownTimer->stop();
-			countdownLabel->setText(tr("Countdown: complete"));
-			countdownSeconds->setEnabled(true);
-			countdownButton->setText(tr("Start Countdown"));
+			finishCountdown(true);
 		} else {
-			countdownLabel->setText(tr("Countdown: %1 s").arg((remaining + 999) / 1000));
+			const qint64 seconds = (remaining + 999) / 1000;
+			countdownLabel->setText(tr("Countdown: %1 s").arg(seconds));
+			writeOverlay(QString::number(seconds));
 		}
 	});
+	connect(content, &QObject::destroyed, this, [restoreOverlay] { restoreOverlay(); });
 
 	connect(addLayer, &QAction::triggered, this, &OBSBasic::AddVerticalLayer);
 	connect(editLayer, &QAction::triggered, this, &OBSBasic::EditVerticalLayer);
