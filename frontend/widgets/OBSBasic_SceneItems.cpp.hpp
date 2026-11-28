@@ -616,6 +616,7 @@ void OBSBasic::CreateSourcePopupMenu(int idx, bool preview)
 	}
 
 	if (hasVideo) {
+		popup.addAction(tr("Open Source Preview"), this, &OBSBasic::OpenSourceWindow);
 		sourceProjector = new QMenu(QTStr("Projector.Open.Source"));
 		AddProjectorMenuMonitors(sourceProjector, this, &OBSBasic::OpenSourceProjector);
 		sourceProjector->addSeparator();
