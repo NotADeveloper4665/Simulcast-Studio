@@ -17,6 +17,9 @@ struct Filter {
     result: Arc<Mutex<Option<Mask>>>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
+    active: inference::ActiveRun,
+    recycle: Receiver<Vec<u8>>,
+    recycle_tx: Sender<Vec<u8>>,
 }
 struct Render {
     capture: *mut gs_texrender_t,
@@ -91,10 +94,14 @@ unsafe extern "C" fn properties(_: *mut c_void) -> *mut obs_properties_t {
 unsafe extern "C" fn create(s: *mut obs_data_t, source: *mut obs_source_t) -> *mut c_void {
     let (tx,rx) = bounded(1);
     let evict = rx.clone();
+    let (recycle_tx, recycle) = bounded(3);
+    let worker_recycle = recycle_tx.clone();
+    let active: inference::ActiveRun = Arc::new(Mutex::new(None));
+    let worker_active = active.clone();
     let result = Arc::new(Mutex::new(None));
     let stop = Arc::new(AtomicBool::new(false));
     let (out,quit) = (result.clone(),stop.clone());
-    let worker = match std::thread::Builder::new().name("simulcast-segmentation".into()).spawn(move || inference::run(rx,out,quit)) {
+    let worker = match std::thread::Builder::new().name("simulcast-segmentation".into()).spawn(move || inference::run(rx,out,quit,worker_active,worker_recycle)) {
         Ok(t)=>t, Err(_)=>return ptr::null_mut()
     };
     obs_enter_graphics();
@@ -103,7 +110,7 @@ unsafe extern "C" fn create(s: *mut obs_data_t, source: *mut obs_source_t) -> *m
     obs_leave_graphics();
     // Retain fail-closed behavior, but report unusable graphics resources.
     if !render.valid() { eprintln!("Simulcast background removal: graphics initialization failed"); }
-    Box::into_raw(Box::new(Filter { source, dirty:AtomicBool::new(true), width:AtomicU32::new(0),height:AtomicU32::new(0), settings:Mutex::new(read_settings(s,0)),render:UnsafeCell::new(render),tx,evict,result,stop,worker:Some(worker) })).cast()
+    Box::into_raw(Box::new(Filter { source, dirty:AtomicBool::new(true), width:AtomicU32::new(0),height:AtomicU32::new(0), settings:Mutex::new(read_settings(s,0)),render:UnsafeCell::new(render),tx,evict,result,stop,worker:Some(worker),active,recycle,recycle_tx })).cast()
 }
 unsafe extern "C" fn update(data: *mut c_void,s: *mut obs_data_t) {
     if data.is_null() { return; }
@@ -118,6 +125,9 @@ unsafe extern "C" fn destroy(data: *mut c_void) {
     if data.is_null() { return; }
     let mut f=Box::from_raw(data.cast::<Filter>());
     f.stop.store(true,Ordering::Release);
+    if let Ok(slot) = f.active.lock() {
+        if let Some(options) = slot.as_ref() { let _ = options.terminate(); }
+    }
     let _ = f.evict.try_recv();
     // Disconnect the job channel so an idle worker wakes immediately.
     let (closed, _) = bounded(0);
@@ -127,8 +137,8 @@ unsafe extern "C" fn destroy(data: *mut c_void) {
 }
 fn latest(f: &Filter, job: Job) {
     if let Err(TrySendError::Full(job)) = f.tx.try_send(job) {
-        let _ = f.evict.try_recv();
-        let _ = f.tx.try_send(job);
+        if let Ok(old) = f.evict.try_recv() { let _ = f.recycle_tx.try_send(old.rgb); }
+        if let Err(TrySendError::Full(old) | TrySendError::Disconnected(old)) = f.tx.try_send(job) { let _ = f.recycle_tx.try_send(old.rgb); }
     }
 }
 unsafe fn draw(tex:*mut gs_texture_t,w:u32,h:u32) {
@@ -186,7 +196,8 @@ unsafe extern "C" fn render(data:*mut c_void,_:*mut gs_effect_t) {
         let mut stride=0;
         if gs_stagesurface_map(r.stages[previous],&mut pixels,&mut stride) {
             if !pixels.is_null() && stride >= (W*4) as u32 {
-                let mut rgb=Vec::with_capacity(W*H*3);
+                let mut rgb=f.recycle.try_recv().unwrap_or_else(|_| Vec::with_capacity(W*H*3));
+                rgb.clear();
                 for y in 0..H {
                     let row=std::slice::from_raw_parts(pixels.add(y*stride as usize),W*4);
                     for px in row.chunks_exact(4) { rgb.extend_from_slice(&px[..3]); }
