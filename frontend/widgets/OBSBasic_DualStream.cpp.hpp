@@ -1439,6 +1439,50 @@ void OBSBasic::InitDualStreamDock()
 	streamHealth->setWordWrap(true);
 	streamHealth->setText(tr("Multi-stream health: idle"));
 	layout->addWidget(streamHealth);
+	// Operator-only countdown; does not modify scenes or start outputs.
+	auto *countdownLabel = new QLabel(tr("Countdown: ready"), content);
+	auto *countdownSeconds = new QSpinBox(content);
+	countdownSeconds->setRange(1, 3600);
+	countdownSeconds->setValue(60);
+	countdownSeconds->setSuffix(tr(" s"));
+	auto *countdownButton = new QPushButton(tr("Start Countdown"), content);
+	auto *countdownTimer = new QTimer(content);
+	countdownTimer->setInterval(100);
+	auto *countdownRow = new QHBoxLayout;
+	countdownRow->addWidget(countdownLabel, 1);
+	countdownRow->addWidget(countdownSeconds);
+	countdownRow->addWidget(countdownButton);
+	layout->addLayout(countdownRow);
+	connect(countdownButton, &QPushButton::clicked, countdownTimer, [countdownTimer, countdownLabel, countdownSeconds, countdownButton] {
+		if (countdownTimer->isActive()) {
+			countdownTimer->stop();
+			countdownLabel->setText(tr("Countdown: ready"));
+			countdownSeconds->setEnabled(true);
+			countdownButton->setText(tr("Start Countdown"));
+			return;
+		}
+		countdownTimer->setProperty("durationMs", countdownSeconds->value() * 1000);
+		countdownTimer->setProperty("restartClock", true);
+		countdownLabel->setText(tr("Countdown: %1 s").arg(countdownSeconds->value()));
+		countdownSeconds->setEnabled(false);
+		countdownButton->setText(tr("Cancel"));
+		countdownTimer->start();
+	});
+	connect(countdownTimer, &QTimer::timeout, countdownTimer, [countdownTimer, countdownLabel, countdownSeconds, countdownButton, clock = QElapsedTimer{}]() mutable {
+		if (countdownTimer->property("restartClock").toBool()) {
+			clock.start();
+			countdownTimer->setProperty("restartClock", false);
+		}
+		const qint64 remaining = countdownTimer->property("durationMs").toInt() - clock.elapsed();
+		if (remaining <= 0) {
+			countdownTimer->stop();
+			countdownLabel->setText(tr("Countdown: complete"));
+			countdownSeconds->setEnabled(true);
+			countdownButton->setText(tr("Start Countdown"));
+		} else {
+			countdownLabel->setText(tr("Countdown: %1 s").arg((remaining + 999) / 1000));
+		}
+	});
 
 	connect(addLayer, &QAction::triggered, this, &OBSBasic::AddVerticalLayer);
 	connect(editLayer, &QAction::triggered, this, &OBSBasic::EditVerticalLayer);
