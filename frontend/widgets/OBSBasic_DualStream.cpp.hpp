@@ -1634,6 +1634,21 @@ void OBSBasic::InitDualStreamDock()
 		const qint64 now = healthClock.elapsed();
 		QStringList healthRows;
 		QHash<QString, QPair<quint64, qint64>> nextSamples;
+		auto appendMetrics = [&](QString &row, obs_output_t *output, const QString &sampleKey) {
+			if (!output || !obs_output_active(output))
+				return;
+			const quint64 bytes = obs_output_get_total_bytes(output);
+			const auto previous = healthSamples.constFind(sampleKey);
+			if (previous != healthSamples.cend() && bytes >= previous->first && now > previous->second)
+				row += tr(" · Actual %1 kbps").arg(double(bytes - previous->first) * 8.0 / double(now - previous->second), 0, 'f', 0);
+			nextSamples.insert(sampleKey, qMakePair(bytes, now));
+			row += tr(" · Congestion %1% · Dropped %2/%3")
+				.arg(double(obs_output_get_congestion(output)) * 100.0, 0, 'f', 0)
+				.arg(obs_output_get_frames_dropped(output))
+				.arg(obs_output_get_total_frames(output));
+			if (obs_output_reconnecting(output))
+				row += tr(" · Reconnecting");
+		};
 		int healthIndex = 0;
 		for (const auto &destination : streamDestinations) {
 			const QString sampleKey = QString::number(healthIndex++);
@@ -1645,40 +1660,16 @@ void OBSBasic::InitDualStreamDock()
 			case StreamDestination::Failed: status = tr("Failed"); break;
 			default: status = tr("Idle"); break;
 			}
-			QString row = tr("%1 (%2): %3").arg(destination->name,
-				destination->vertical ? tr("Vertical") : tr("Horizontal"), status);
-			if (destination->output && obs_output_active(destination->output)) {
-				const quint64 bytes = obs_output_get_total_bytes(destination->output);
-				const auto previous = healthSamples.constFind(sampleKey);
-				if (previous != healthSamples.cend() && bytes >= previous->first && now > previous->second) {
-					const double kbps = double(bytes - previous->first) * 8.0 / double(now - previous->second);
-					row += tr(" · Actual %1 kbps").arg(kbps, 0, 'f', 0);
-				}
-				nextSamples.insert(sampleKey, qMakePair(bytes, now));
-				row += tr(" · Congestion %1%").arg(double(obs_output_get_congestion(destination->output)) * 100.0, 0, 'f', 0);
-				if (obs_output_reconnecting(destination->output))
-					row += tr(" · Reconnecting");
-				row += tr(" · Target %1 kbps · Dropped %2/%3")
-					.arg(destination->bitrate)
-					.arg(obs_output_get_frames_dropped(destination->output))
-					.arg(obs_output_get_total_frames(destination->output));
-			}
+			QString row = tr("%1 (%2): %3 · Target %4 kbps").arg(destination->name,
+				destination->vertical ? tr("Vertical") : tr("Horizontal"), status).arg(destination->bitrate);
+			appendMetrics(row, destination->output, sampleKey);
 			healthRows.append(row);
 		}
 		if (!MultiStreamActive() && outputHandler && outputHandler->streamOutput) {
 			auto *output = outputHandler->streamOutput.Get();
 			if (obs_output_active(output)) {
-				const QString sampleKey = QStringLiteral("standard");
-				const quint64 bytes = obs_output_get_total_bytes(output);
-				QString row = obs_output_reconnecting(output) ? tr("Standard stream: Reconnecting") : tr("Standard stream: Live");
-				const auto previous = healthSamples.constFind(sampleKey);
-				if (previous != healthSamples.cend() && bytes >= previous->first && now > previous->second)
-					row += tr(" · Actual %1 kbps").arg(double(bytes - previous->first) * 8.0 / double(now - previous->second), 0, 'f', 0);
-				nextSamples.insert(sampleKey, qMakePair(bytes, now));
-				row += tr(" · Congestion %1% · Dropped %2/%3")
-					.arg(double(obs_output_get_congestion(output)) * 100.0, 0, 'f', 0)
-					.arg(obs_output_get_frames_dropped(output))
-					.arg(obs_output_get_total_frames(output));
+				QString row = tr("Standard stream: Live");
+				appendMetrics(row, output, QStringLiteral("standard"));
 				healthRows.append(row);
 			}
 		}
