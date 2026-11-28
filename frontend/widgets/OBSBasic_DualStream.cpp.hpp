@@ -1439,6 +1439,71 @@ void OBSBasic::InitDualStreamDock()
 	streamHealth->setWordWrap(true);
 	streamHealth->setText(tr("Multi-stream health: idle"));
 	layout->addWidget(streamHealth);
+	auto *ducking = new QPushButton(tr("Configure Audio Ducking"), content);
+	layout->addWidget(ducking);
+	connect(ducking, &QPushButton::clicked, this, [this] {
+		QStringList names;
+		obs_enum_sources([](void *param, obs_source_t *source) {
+			if (obs_source_get_output_flags(source) & OBS_SOURCE_AUDIO)
+				static_cast<QStringList *>(param)->append(QString::fromUtf8(obs_source_get_name(source)));
+			return true;
+		}, &names);
+		names.sort();
+		if (names.size() < 2) {
+			QMessageBox::information(this, tr("Audio Ducking"), tr("Add at least two audio sources."));
+			return;
+		}
+		bool ok = false;
+		const auto targetName = QInputDialog::getItem(this, tr("Audio Ducking"), tr("Audio to reduce"), names, 0, false, &ok);
+		if (!ok)
+			return;
+		OBSSourceAutoRelease target = obs_get_source_by_name(targetName.toUtf8().constData());
+		if (!target)
+			return;
+		const char *filterName = "Simulcast Audio Ducking";
+		OBSSourceAutoRelease existing = obs_source_get_filter_by_name(target, filterName);
+		if (existing && QString::fromUtf8(obs_source_get_id(existing)) != QStringLiteral("compressor_filter")) {
+			QMessageBox::warning(this, tr("Audio Ducking"), tr("A different filter already uses the ducking filter name."));
+			return;
+		}
+		names.removeAll(targetName);
+		names.prepend(tr("Disable ducking"));
+		const auto trigger = QInputDialog::getItem(this, tr("Audio Ducking"), tr("Trigger source"), names, 1, false, &ok);
+		if (!ok)
+			return;
+		if (trigger == names.first()) {
+			if (existing)
+				obs_source_set_enabled(existing, false);
+			SaveProject();
+			return;
+		}
+		const double threshold = QInputDialog::getDouble(this, tr("Audio Ducking"), tr("Threshold (dB)"), -24, -60, 0, 1, &ok);
+		if (!ok)
+			return;
+		const double ratio = QInputDialog::getDouble(this, tr("Audio Ducking"), tr("Compression ratio"), 8, 1, 32, 1, &ok);
+		if (!ok)
+			return;
+		OBSDataAutoRelease settings = obs_data_create();
+		obs_data_set_string(settings, "sidechain_source", trigger.toUtf8().constData());
+		obs_data_set_double(settings, "threshold", threshold);
+		obs_data_set_double(settings, "ratio", ratio);
+		obs_data_set_int(settings, "attack_time", 10);
+		obs_data_set_int(settings, "release_time", 300);
+		obs_data_set_double(settings, "output_gain", 0);
+		if (existing) {
+			obs_source_update(existing, settings);
+			obs_source_set_enabled(existing, true);
+		} else {
+			OBSSourceAutoRelease filter = obs_source_create_private("compressor_filter", filterName, settings);
+			if (!filter) {
+				QMessageBox::warning(this, tr("Audio Ducking"), tr("Native compressor is unavailable."));
+				return;
+			}
+			obs_source_filter_add(target, filter);
+		}
+		SaveProject();
+	});
+
 	// Operator-only countdown; does not modify scenes or start outputs.
 	auto *countdownLabel = new QLabel(tr("Countdown: ready"), content);
 	auto *countdownSeconds = new QSpinBox(content);
