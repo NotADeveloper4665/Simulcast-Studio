@@ -1441,14 +1441,26 @@ void OBSBasic::InitDualStreamDock()
 	verticalRecording->vertical = true;
 	auto *recordingStatus = new QLabel(content);
 	layout->addWidget(recordingStatus);
-	auto *streamHealth = new QLabel(content);
+	auto createToolDock = [this](const QString &title, const QString &id, Qt::DockWidgetArea area) {
+		auto *toolDock = new QDockWidget(title, this);
+		toolDock->setObjectName(id);
+		auto *body = new QWidget(toolDock);
+		auto *bodyLayout = new QVBoxLayout(body);
+		toolDock->setWidget(body);
+		AddDockWidget(toolDock, area);
+		toolDock->hide();
+		return bodyLayout;
+	};
+	auto *healthLayout = createToolDock(tr("Broadcast Health"), QStringLiteral("simulcastBroadcastHealthDock"), Qt::RightDockWidgetArea);
+	auto *replayLayout = createToolDock(tr("Instant Replay"), QStringLiteral("simulcastInstantReplayDock"), Qt::BottomDockWidgetArea);
+	auto *countdownLayout = createToolDock(tr("Countdown"), QStringLiteral("simulcastCountdownDock"), Qt::BottomDockWidgetArea);
+	auto *streamHealth = new QLabel(healthLayout->parentWidget());
 	streamHealth->setTextFormat(Qt::PlainText);
 	streamHealth->setWordWrap(true);
 	streamHealth->setText(tr("Multi-stream health: idle"));
-	layout->addWidget(streamHealth);
-	auto *playlistButton = new QPushButton(tr("Media Playlist"), content);
-	layout->addWidget(playlistButton);
-	connect(playlistButton, &QPushButton::clicked, this, [this] {
+	healthLayout->addWidget(streamHealth);
+	auto *playlistButton = ui->menuTools->addAction(tr("Media Playlist"));
+	connect(playlistButton, &QAction::triggered, this, [this] {
 		QStringList names;
 		obs_enum_sources([](void *data, obs_source_t *source) {
 			if (QString::fromUtf8(obs_source_get_id(source)) == QStringLiteral("vlc_source"))
@@ -1540,17 +1552,17 @@ void OBSBasic::InitDualStreamDock()
 	});
 
 	auto *replayRow = new QHBoxLayout;
-	auto *replayToggle = new QPushButton(tr("Start Replay Buffer"), content);
-	auto *replaySave = new QPushButton(tr("Save Replay"), content);
-	auto *replayPlay = new QPushButton(tr("Play Last Replay"), content);
-	auto *replayStatus = new QLabel(content);
+	auto *replayToggle = new QPushButton(tr("Start Replay Buffer"), replayLayout->parentWidget());
+	auto *replaySave = new QPushButton(tr("Save Replay"), replayLayout->parentWidget());
+	auto *replayPlay = new QPushButton(tr("Play Last Replay"), replayLayout->parentWidget());
+	auto *replayStatus = new QLabel(replayLayout->parentWidget());
 	replayStatus->setTextFormat(Qt::PlainText);
 	replayStatus->setWordWrap(true);
 	replayRow->addWidget(replayToggle);
 	replayRow->addWidget(replaySave);
 	replayRow->addWidget(replayPlay);
-	layout->addLayout(replayRow);
-	layout->addWidget(replayStatus);
+	replayLayout->addLayout(replayRow);
+	replayLayout->addWidget(replayStatus);
 	connect(replayToggle, &QPushButton::clicked, this, [this] {
 		if (ReplayBufferActive())
 			StopReplayBuffer();
@@ -1574,14 +1586,14 @@ void OBSBasic::InitDualStreamDock()
 		replayStatus->setText(!available ? tr("Enable Replay Buffer in Output settings.") :
 			path.isEmpty() ? tr("No replay saved yet") : tr("Last replay: %1").arg(path));
 	};
-	auto *replayTimer = new QTimer(content);
-	connect(replayTimer, &QTimer::timeout, content, updateReplay);
+	auto *replayTimer = new QTimer(replayLayout->parentWidget());
+	connect(replayTimer, &QTimer::timeout, replayLayout->parentWidget(), updateReplay);
 	replayTimer->start(500);
 	updateReplay();
 
 	// Use a dedicated operator-selected media source, preserving its scene transform.
-	auto *replayAir = new QPushButton(tr("Play Replay On Air"), content);
-	layout->addWidget(replayAir);
+	auto *replayAir = new QPushButton(tr("Play Replay On Air"), replayLayout->parentWidget());
+	replayLayout->addWidget(replayAir);
 	connect(replayAir, &QPushButton::clicked, this, [this] {
 		const QString path = QString::fromStdString(lastReplay);
 		if (!QFileInfo(path).isFile()) {
@@ -1632,9 +1644,8 @@ void OBSBasic::InitDualStreamDock()
 		controls.exec();
 	});
 
-	auto *ducking = new QPushButton(tr("Configure Audio Ducking"), content);
-	layout->addWidget(ducking);
-	connect(ducking, &QPushButton::clicked, this, [this] {
+	auto *ducking = ui->menuTools->addAction(tr("Configure Audio Ducking"));
+	connect(ducking, &QAction::triggered, this, [this] {
 		QStringList names;
 		obs_enum_sources([](void *param, obs_source_t *source) {
 			if (obs_source_get_output_flags(source) & OBS_SOURCE_AUDIO)
@@ -1727,21 +1738,21 @@ void OBSBasic::InitDualStreamDock()
 	});
 
 	// Optional on-air countdown uses an existing text source, never creates or removes scene items.
-	auto *countdownLabel = new QLabel(tr("Countdown: ready"), content);
-	auto *countdownSeconds = new QSpinBox(content);
+	auto *countdownLabel = new QLabel(tr("Countdown: ready"), countdownLayout->parentWidget());
+	auto *countdownSeconds = new QSpinBox(countdownLayout->parentWidget());
 	countdownSeconds->setRange(1, 3600);
 	countdownSeconds->setValue(60);
 	countdownSeconds->setSuffix(tr(" s"));
-	auto *countdownButton = new QPushButton(tr("Start Countdown"), content);
-	auto *countdownOverlay = new QComboBox(content);
-	auto *countdownTimer = new QTimer(content);
+	auto *countdownButton = new QPushButton(tr("Start Countdown"), countdownLayout->parentWidget());
+	auto *countdownOverlay = new QComboBox(countdownLayout->parentWidget());
+	auto *countdownTimer = new QTimer(countdownLayout->parentWidget());
 	countdownTimer->setInterval(100);
 	auto *countdownRow = new QHBoxLayout;
 	countdownRow->addWidget(countdownLabel, 1);
 	countdownRow->addWidget(countdownSeconds);
 	countdownRow->addWidget(countdownButton);
-	layout->addLayout(countdownRow);
-	layout->addWidget(countdownOverlay);
+	countdownLayout->addLayout(countdownRow);
+	countdownLayout->addWidget(countdownOverlay);
 	auto refreshTextSources = [countdownOverlay] {
 		countdownOverlay->clear();
 		countdownOverlay->addItem(QObject::tr("Operator only"), QString());
@@ -1755,9 +1766,9 @@ void OBSBasic::InitDualStreamDock()
 			return true;
 		}, countdownOverlay);
 	};
-	auto *refreshOverlay = new QPushButton(tr("Refresh Countdown Text Sources"), content);
-	layout->addWidget(refreshOverlay);
-	connect(refreshOverlay, &QPushButton::clicked, content, refreshTextSources);
+	auto *refreshOverlay = new QPushButton(tr("Refresh Countdown Text Sources"), countdownLayout->parentWidget());
+	countdownLayout->addWidget(refreshOverlay);
+	connect(refreshOverlay, &QPushButton::clicked, countdownLayout->parentWidget(), refreshTextSources);
 	refreshTextSources();
 	struct CountdownState {
 		QElapsedTimer clock;
@@ -1846,7 +1857,7 @@ void OBSBasic::InitDualStreamDock()
 			writeOverlay(QString::number(seconds));
 		}
 	});
-	connect(content, &QObject::destroyed, this, [restoreOverlay] { restoreOverlay(); });
+	connect(countdownLayout->parentWidget(), &QObject::destroyed, this, [restoreOverlay] { restoreOverlay(); });
 
 	connect(addLayer, &QAction::triggered, this, &OBSBasic::AddVerticalLayer);
 	connect(editLayer, &QAction::triggered, this, &OBSBasic::EditVerticalLayer);
