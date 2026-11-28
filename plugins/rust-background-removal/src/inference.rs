@@ -2,7 +2,7 @@
 // Model and reference contract: MediaPipe Selfie Segmentation (landscape),
 // Google LLC (Apache-2.0), as used by royshil/obs-backgroundremoval.
 use crossbeam_channel::Receiver;
-use ort::{session::Session, value::Tensor};
+use ort::{session::Session, value::TensorRef};
 use std::{sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 pub const W: usize = 256;
 pub const H: usize = 144;
@@ -41,17 +41,26 @@ fn load(path: &str, gpu: bool) -> Result<Session, Box<dyn std::error::Error>> {
     let builder = builder.with_execution_providers(providers)?;
     Ok(if path.is_empty() { builder.commit_from_memory(MODEL)? } else { builder.commit_from_file(path)? })
 }
+fn preprocess_into(rgb: &[u8], input: &mut ndarray::Array4<f32>) {
+    for (i, pixel) in rgb.chunks_exact(3).enumerate() {
+        for c in 0..3 { input[[0,c,i/W,i%W]] = pixel[c] as f32 / 255.0; }
+    }
+}
+#[cfg(test)]
 fn preprocess(rgb: &[u8]) -> ndarray::Array4<f32> {
-    ndarray::Array4::from_shape_fn((1,3,H,W), |(_,c,y,x)| rgb[(y*W+x)*3+c] as f32 / 255.0)
+    let mut input = ndarray::Array4::zeros((1,3,H,W));
+    preprocess_into(rgb, &mut input);
+    input
 }
 fn quantize(data: &[f32]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if data.len()!=W*H || data.iter().any(|v| !v.is_finite()) { return Err("invalid foreground mask".into()); }
     // Absolute model probability; never min/max normalize an empty foreground.
     Ok(data.iter().map(|v| (v.clamp(0.,1.)*255.).round() as u8).collect())
 }
-fn infer(session: &mut Session, rgb: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn infer(session: &mut Session, rgb: &[u8], scratch: &mut ndarray::Array4<f32>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if rgb.len()!=W*H*3 { return Err("invalid RGB frame".into()); }
-    let input = Tensor::from_array(preprocess(rgb))?;
+    preprocess_into(rgb, scratch);
+    let input = TensorRef::from_array_view(scratch.view())?;
     let outputs = session.run(ort::inputs![input])?;
     if outputs.len()==0 { return Err("no output".into()); }
     let (shape, data) = outputs[0].try_extract_tensor::<f32>()?;
@@ -62,6 +71,7 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
     let mut path: Option<String> = None;
     let mut session = None;
     let mut gpu = true;
+    let mut scratch = ndarray::Array4::zeros((1,3,H,W));
     while !stop.load(Ordering::Acquire) {
         let job = match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(j)=>j, Err(crossbeam_channel::RecvTimeoutError::Timeout)=>continue, Err(_)=>break
@@ -80,7 +90,7 @@ pub fn run(rx: Receiver<Job>, result: Arc<Mutex<Option<Mask>>>, stop: Arc<Atomic
         if stop.load(Ordering::Acquire) { break; }
         if !fresh(job.captured, Instant::now()) { continue; }
         if let Some(s) = session.as_mut() {
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| infer(s,&job.rgb))) {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| infer(s,&job.rgb,&mut scratch))) {
                 Ok(Ok(alpha)) => { if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha,generation:job.generation,captured:job.captured}); } }
                 _ => {
                     if let Ok(mut slot)=result.lock() { *slot=Some(Mask{alpha:Vec::new(),generation:job.generation,captured:job.captured}); }
@@ -115,6 +125,6 @@ mod tests {
     }
     #[test] fn pinned_model_cpu_inference() {
         let mut s=load("",false).expect("bundled MediaPipe model");
-        assert_eq!(infer(&mut s,&vec![128;W*H*3]).unwrap().len(),W*H);
+        assert_eq!(infer(&mut s,&vec![128;W*H*3], &mut ndarray::Array4::zeros((1,3,H,W))).unwrap().len(),W*H);
     }
 }
