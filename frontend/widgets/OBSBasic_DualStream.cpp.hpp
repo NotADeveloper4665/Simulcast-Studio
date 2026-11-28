@@ -1658,6 +1658,23 @@ void OBSBasic::InitDualStreamDock()
 			}
 			healthRows.append(row);
 		}
+		if (!MultiStreamActive() && outputHandler && outputHandler->streamOutput) {
+			auto *output = outputHandler->streamOutput.Get();
+			if (obs_output_active(output)) {
+				const QString sampleKey = QStringLiteral("standard");
+				const quint64 bytes = obs_output_get_total_bytes(output);
+				QString row = obs_output_reconnecting(output) ? tr("Standard stream: Reconnecting") : tr("Standard stream: Live");
+				const auto previous = healthSamples.constFind(sampleKey);
+				if (previous != healthSamples.cend() && bytes >= previous->first && now > previous->second)
+					row += tr(" · Actual %1 kbps").arg(double(bytes - previous->first) * 8.0 / double(now - previous->second), 0, 'f', 0);
+				nextSamples.insert(sampleKey, qMakePair(bytes, now));
+				row += tr(" · Congestion %1% · Dropped %2/%3")
+					.arg(double(obs_output_get_congestion(output)) * 100.0, 0, 'f', 0)
+					.arg(obs_output_get_frames_dropped(output))
+					.arg(obs_output_get_total_frames(output));
+				healthRows.append(row);
+			}
+		}
 		healthSamples.swap(nextSamples);
 		const QString healthText = healthRows.isEmpty() ? tr("Multi-stream health: idle") : healthRows.join(QLatin1Char('\n'));
 		if (streamHealth->text() != healthText)
