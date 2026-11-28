@@ -1674,6 +1674,59 @@ void OBSBasic::InitDualStreamDock()
 	replayTimer->start(500);
 	updateReplay();
 
+	// Use a dedicated operator-selected media source, preserving its scene transform.
+	auto *replayAir = new QPushButton(tr("Play Replay On Air"), content);
+	layout->addWidget(replayAir);
+	connect(replayAir, &QPushButton::clicked, this, [this] {
+		const QString path = QString::fromStdString(lastReplay);
+		if (!QFileInfo(path).isFile()) {
+			QMessageBox::information(this, tr("Replay"), tr("Save a replay first."));
+			return;
+		}
+		QStringList names;
+		obs_enum_sources([](void *data, obs_source_t *source) {
+			if (QString::fromUtf8(obs_source_get_id(source)) == QStringLiteral("ffmpeg_source"))
+				static_cast<QStringList *>(data)->append(QString::fromUtf8(obs_source_get_name(source)));
+			return true;
+		}, &names);
+		if (names.isEmpty()) {
+			QMessageBox::information(this, tr("Replay"), tr("Add a dedicated Media Source to your replay scene first."));
+			return;
+		}
+		bool ok = false;
+		const QString name = QInputDialog::getItem(this, tr("Replay"), tr("Dedicated replay media source"), names, 0, false, &ok);
+		if (!ok)
+			return;
+		OBSSourceAutoRelease source = obs_get_source_by_name(name.toUtf8().constData());
+		if (!source || QString::fromUtf8(obs_source_get_id(source)) != QStringLiteral("ffmpeg_source"))
+			return;
+		if (QMessageBox::question(this, tr("Replay"), tr("Replace the media file in %1 and start playback? This affects every scene using that source.").arg(name)) != QMessageBox::Yes)
+			return;
+		OBSDataAutoRelease settings = obs_source_get_settings(source);
+		obs_data_set_bool(settings, "is_local_file", true);
+		obs_data_set_string(settings, "local_file", path.toUtf8().constData());
+		obs_data_set_bool(settings, "looping", false);
+		obs_source_update(source, settings);
+		obs_source_media_restart(source);
+		SaveProject();
+		QDialog controls(this);
+		controls.setWindowTitle(tr("On-air Replay — %1").arg(name));
+		auto *panel = new QHBoxLayout(&controls);
+		auto *play = new QPushButton(tr("Play"), &controls);
+		auto *pause = new QPushButton(tr("Pause"), &controls);
+		auto *restart = new QPushButton(tr("Restart"), &controls);
+		auto *stop = new QPushButton(tr("Stop"), &controls);
+		panel->addWidget(play);
+		panel->addWidget(pause);
+		panel->addWidget(restart);
+		panel->addWidget(stop);
+		connect(play, &QPushButton::clicked, &controls, [&] { obs_source_media_play_pause(source, false); });
+		connect(pause, &QPushButton::clicked, &controls, [&] { obs_source_media_play_pause(source, true); });
+		connect(restart, &QPushButton::clicked, &controls, [&] { obs_source_media_restart(source); });
+		connect(stop, &QPushButton::clicked, &controls, [&] { obs_source_media_stop(source); });
+		controls.exec();
+	});
+
 	auto *ducking = new QPushButton(tr("Configure Audio Ducking"), content);
 	layout->addWidget(ducking);
 	connect(ducking, &QPushButton::clicked, this, [this] {
