@@ -18,6 +18,8 @@
 #include "OBSProjector.hpp"
 #include <QDesktopServices>
 #include <QUrl>
+#include <QFileDialog>
+#include <QDialogButtonBox>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -1441,6 +1443,99 @@ void OBSBasic::InitDualStreamDock()
 	streamHealth->setWordWrap(true);
 	streamHealth->setText(tr("Multi-stream health: idle"));
 	layout->addWidget(streamHealth);
+	auto *playlistButton = new QPushButton(tr("Media Playlist"), content);
+	layout->addWidget(playlistButton);
+	connect(playlistButton, &QPushButton::clicked, this, [this] {
+		QStringList names;
+		obs_enum_sources([](void *data, obs_source_t *source) {
+			if (QString::fromUtf8(obs_source_get_id(source)) == QStringLiteral("vlc_source"))
+				static_cast<QStringList *>(data)->append(QString::fromUtf8(obs_source_get_name(source)));
+			return true;
+		}, &names);
+		if (names.isEmpty()) {
+			QMessageBox::information(this, tr("Media Playlist"), tr("Add a VLC Video Source first. VLC support must be installed."));
+			return;
+		}
+		names.sort();
+		bool ok = false;
+		const QString name = QInputDialog::getItem(this, tr("Media Playlist"), tr("Playlist source"), names, 0, false, &ok);
+		if (!ok)
+			return;
+		OBSSourceAutoRelease source = obs_get_source_by_name(name.toUtf8().constData());
+		if (!source || QString::fromUtf8(obs_source_get_id(source)) != QStringLiteral("vlc_source"))
+			return;
+		OBSDataAutoRelease settings = obs_source_get_settings(source);
+		QDialog dialog(this);
+		dialog.setWindowTitle(tr("Media Playlist — %1").arg(name));
+		auto *panel = new QVBoxLayout(&dialog);
+		auto *entries = new QListWidget(&dialog);
+		entries->setSelectionMode(QAbstractItemView::SingleSelection);
+		entries->setDragDropMode(QAbstractItemView::InternalMove);
+		panel->addWidget(entries);
+		auto *array = obs_data_get_array(settings, "playlist");
+		if (array) {
+			for (size_t i = 0; i < obs_data_array_count(array); ++i) {
+				OBSDataAutoRelease entry = obs_data_array_item(array, i);
+				entries->addItem(QString::fromUtf8(obs_data_get_string(entry, "value")));
+			}
+			obs_data_array_release(array);
+		}
+		auto *edit = new QHBoxLayout;
+		auto *add = new QPushButton(tr("Add Files"), &dialog);
+		auto *remove = new QPushButton(tr("Remove"), &dialog);
+		edit->addWidget(add);
+		edit->addWidget(remove);
+		panel->addLayout(edit);
+		connect(add, &QPushButton::clicked, &dialog, [entries, &dialog] {
+			entries->addItems(QFileDialog::getOpenFileNames(&dialog, QObject::tr("Add Media")));
+		});
+		connect(remove, &QPushButton::clicked, &dialog, [entries] {
+			if (entries->currentRow() >= 0)
+				delete entries->takeItem(entries->currentRow());
+		});
+		auto *loop = new QCheckBox(tr("Loop"), &dialog);
+		auto *shuffle = new QCheckBox(tr("Shuffle"), &dialog);
+		loop->setChecked(obs_data_get_bool(settings, "loop"));
+		shuffle->setChecked(obs_data_get_bool(settings, "shuffle"));
+		panel->addWidget(loop);
+		panel->addWidget(shuffle);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+		panel->addWidget(buttons);
+		connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+		connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+		if (dialog.exec() != QDialog::Accepted)
+			return;
+		auto *updated = obs_data_array_create();
+		for (int i = 0; i < entries->count(); ++i) {
+			OBSDataAutoRelease entry = obs_data_create();
+			obs_data_set_string(entry, "value", entries->item(i)->text().toUtf8().constData());
+			obs_data_array_push_back(updated, entry);
+		}
+		obs_data_set_array(settings, "playlist", updated);
+		obs_data_array_release(updated);
+		obs_data_set_bool(settings, "loop", loop->isChecked());
+		obs_data_set_bool(settings, "shuffle", shuffle->isChecked());
+		obs_source_update(source, settings);
+		SaveProject();
+		QDialog controls(this);
+		controls.setWindowTitle(tr("Playlist Playback"));
+		auto *transport = new QHBoxLayout(&controls);
+		for (const auto &action : {qMakePair(tr("Previous"), 0), qMakePair(tr("Play"), 1), qMakePair(tr("Pause"), 2), qMakePair(tr("Next"), 3), qMakePair(tr("Stop"), 4)}) {
+			auto *button = new QPushButton(action.first, &controls);
+			transport->addWidget(button);
+			connect(button, &QPushButton::clicked, &controls, [&, command = action.second] {
+				switch (command) {
+				case 0: obs_source_media_previous(source); break;
+				case 1: obs_source_media_play_pause(source, false); break;
+				case 2: obs_source_media_play_pause(source, true); break;
+				case 3: obs_source_media_next(source); break;
+				case 4: obs_source_media_stop(source); break;
+				}
+			});
+		}
+		controls.exec();
+	});
+
 	auto *replayRow = new QHBoxLayout;
 	auto *replayToggle = new QPushButton(tr("Start Replay Buffer"), content);
 	auto *replaySave = new QPushButton(tr("Save Replay"), content);
