@@ -16,6 +16,7 @@
 #include "frontend/build/frontend-widgets.pch.hpp"
 
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -1616,13 +1617,19 @@ void OBSBasic::InitDualStreamDock()
 	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 
 	auto *timer = new QTimer(dock);
-	connect(timer, &QTimer::timeout, this, [this, recordingStatus, streamHealth, wasActive = false, wasLive = false, wasVerticalRecording = false]() mutable {
+	connect(timer, &QTimer::timeout, this, [this, recordingStatus, streamHealth, healthClock = QElapsedTimer{}, healthSamples = QHash<QString, QPair<quint64, qint64>>{}, wasActive = false, wasLive = false, wasVerticalRecording = false]() mutable {
 		if (verticalPreviewPanel && verticalPreviewPanel->isVisible() && !(QApplication::mouseButtons() & Qt::LeftButton)) {
 			RefreshVerticalScenes();
 			RefreshVerticalLayers();
 		}
+		if (!healthClock.isValid())
+			healthClock.start();
+		const qint64 now = healthClock.elapsed();
 		QStringList healthRows;
+		QHash<QString, QPair<quint64, qint64>> nextSamples;
+		int healthIndex = 0;
 		for (const auto &destination : streamDestinations) {
+			const QString sampleKey = QString::number(healthIndex++);
 			QString status;
 			switch (destination->state.load()) {
 			case StreamDestination::Connecting: status = tr("Connecting"); break;
@@ -1634,6 +1641,14 @@ void OBSBasic::InitDualStreamDock()
 			QString row = tr("%1 (%2): %3").arg(destination->name,
 				destination->vertical ? tr("Vertical") : tr("Horizontal"), status);
 			if (destination->output && obs_output_active(destination->output)) {
+				const quint64 bytes = obs_output_get_total_bytes(destination->output);
+				const auto previous = healthSamples.constFind(sampleKey);
+				if (previous != healthSamples.cend() && bytes >= previous->first && now > previous->second) {
+					const double kbps = double(bytes - previous->first) * 8.0 / double(now - previous->second);
+					row += tr(" · Actual %1 kbps").arg(kbps, 0, 'f', 0);
+				}
+				nextSamples.insert(sampleKey, qMakePair(bytes, now));
+				row += tr(" · Congestion %1%").arg(double(obs_output_get_congestion(destination->output)) * 100.0, 0, 'f', 0);
 				if (obs_output_reconnecting(destination->output))
 					row += tr(" · Reconnecting");
 				row += tr(" · Target %1 kbps · Dropped %2/%3")
@@ -1643,6 +1658,7 @@ void OBSBasic::InitDualStreamDock()
 			}
 			healthRows.append(row);
 		}
+		healthSamples.swap(nextSamples);
 		const QString healthText = healthRows.isEmpty() ? tr("Multi-stream health: idle") : healthRows.join(QLatin1Char('\n'));
 		if (streamHealth->text() != healthText)
 			streamHealth->setText(healthText);
