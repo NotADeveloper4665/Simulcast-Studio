@@ -1432,6 +1432,11 @@ void OBSBasic::InitDualStreamDock()
 	verticalRecording->vertical = true;
 	auto *recordingStatus = new QLabel(content);
 	layout->addWidget(recordingStatus);
+	auto *streamHealth = new QLabel(content);
+	streamHealth->setTextFormat(Qt::PlainText);
+	streamHealth->setWordWrap(true);
+	streamHealth->setText(tr("Multi-stream health: idle"));
+	layout->addWidget(streamHealth);
 
 	connect(addLayer, &QAction::triggered, this, &OBSBasic::AddVerticalLayer);
 	connect(editLayer, &QAction::triggered, this, &OBSBasic::EditVerticalLayer);
@@ -1611,11 +1616,36 @@ void OBSBasic::InitDualStreamDock()
 	connect(dock, &QDockWidget::visibilityChanged, this, syncVerticalPreview);
 
 	auto *timer = new QTimer(dock);
-	connect(timer, &QTimer::timeout, this, [this, recordingStatus, wasActive = false, wasLive = false, wasVerticalRecording = false]() mutable {
+	connect(timer, &QTimer::timeout, this, [this, recordingStatus, streamHealth, wasActive = false, wasLive = false, wasVerticalRecording = false]() mutable {
 		if (verticalPreviewPanel && verticalPreviewPanel->isVisible() && !(QApplication::mouseButtons() & Qt::LeftButton)) {
 			RefreshVerticalScenes();
 			RefreshVerticalLayers();
 		}
+		QStringList healthRows;
+		for (const auto &destination : streamDestinations) {
+			QString status;
+			switch (destination->state.load()) {
+			case StreamDestination::Connecting: status = tr("Connecting"); break;
+			case StreamDestination::Live: status = tr("Live"); break;
+			case StreamDestination::Stopping: status = tr("Stopping"); break;
+			case StreamDestination::Failed: status = tr("Failed"); break;
+			default: status = tr("Idle"); break;
+			}
+			QString row = tr("%1 (%2): %3").arg(destination->name,
+				destination->vertical ? tr("Vertical") : tr("Horizontal"), status);
+			if (destination->output && obs_output_active(destination->output)) {
+				if (obs_output_reconnecting(destination->output))
+					row += tr(" · Reconnecting");
+				row += tr(" · Target %1 kbps · Dropped %2/%3")
+					.arg(destination->bitrate)
+					.arg(obs_output_get_frames_dropped(destination->output))
+					.arg(obs_output_get_total_frames(destination->output));
+			}
+			healthRows.append(row);
+		}
+		const QString healthText = healthRows.isEmpty() ? tr("Multi-stream health: idle") : healthRows.join(QLatin1Char('\n'));
+		if (streamHealth->text() != healthText)
+			streamHealth->setText(healthText);
 		const bool active = MultiStreamActive();
 		const bool live = std::any_of(streamDestinations.begin(), streamDestinations.end(), [](const auto &destination) {
 			return destination->state.load() == StreamDestination::Live;
