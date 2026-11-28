@@ -19,6 +19,9 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QFileDialog>
+#include <QFormLayout>
+#include <QDoubleSpinBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDateTime>
 #include <QElapsedTimer>
@@ -1699,38 +1702,67 @@ void OBSBasic::InitDualStreamDock()
 			return;
 		}
 		names.removeAll(targetName);
-		names.prepend(tr("Disable ducking"));
-		const auto trigger = QInputDialog::getItem(this, tr("Audio Ducking"), tr("Trigger source"), names, 1, false, &ok);
-		if (!ok)
+		OBSDataAutoRelease settings = existing ? obs_source_get_settings(existing) : obs_data_create();
+		QDialog dialog(this);
+		dialog.setWindowTitle(tr("Audio Ducking — %1").arg(targetName));
+		auto *form = new QFormLayout(&dialog);
+		auto *enabled = new QCheckBox(&dialog);
+		enabled->setChecked(!existing || obs_source_enabled(existing));
+		auto *trigger = new QComboBox(&dialog);
+		trigger->addItems(names);
+		const int savedTrigger = trigger->findText(QString::fromUtf8(obs_data_get_string(settings, "sidechain_source")));
+		if (savedTrigger >= 0)
+			trigger->setCurrentIndex(savedTrigger);
+		auto *threshold = new QDoubleSpinBox(&dialog);
+		threshold->setRange(-60, 0);
+		threshold->setDecimals(1);
+		threshold->setValue(existing ? obs_data_get_double(settings, "threshold") : -24);
+		auto *ratio = new QDoubleSpinBox(&dialog);
+		ratio->setRange(1, 32);
+		ratio->setDecimals(1);
+		ratio->setValue(existing ? obs_data_get_double(settings, "ratio") : 8);
+		auto *attack = new QSpinBox(&dialog);
+		attack->setRange(1, 500);
+		attack->setValue(existing ? int(obs_data_get_int(settings, "attack_time")) : 10);
+		auto *release = new QSpinBox(&dialog);
+		release->setRange(1, 1000);
+		release->setValue(existing ? int(obs_data_get_int(settings, "release_time")) : 300);
+		form->addRow(tr("Enabled"), enabled);
+		form->addRow(tr("Trigger source"), trigger);
+		form->addRow(tr("Threshold (dB)"), threshold);
+		form->addRow(tr("Ratio"), ratio);
+		form->addRow(tr("Attack (ms)"), attack);
+		form->addRow(tr("Release (ms)"), release);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+		form->addRow(buttons);
+		connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+		connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+		if (dialog.exec() != QDialog::Accepted)
 			return;
-		if (trigger == names.first()) {
-			if (existing)
-				obs_source_set_enabled(existing, false);
-			SaveProject();
-			return;
+		if (enabled->isChecked()) {
+			OBSSourceAutoRelease sidechain = obs_get_source_by_name(trigger->currentText().toUtf8().constData());
+			if (!sidechain || sidechain.Get() == target.Get() || !(obs_source_get_output_flags(sidechain) & OBS_SOURCE_AUDIO)) {
+				QMessageBox::warning(this, tr("Audio Ducking"), tr("The trigger source is no longer available."));
+				return;
+			}
 		}
-		const double threshold = QInputDialog::getDouble(this, tr("Audio Ducking"), tr("Threshold (dB)"), -24, -60, 0, 1, &ok);
-		if (!ok)
-			return;
-		const double ratio = QInputDialog::getDouble(this, tr("Audio Ducking"), tr("Compression ratio"), 8, 1, 32, 1, &ok);
-		if (!ok)
-			return;
-		OBSDataAutoRelease settings = obs_data_create();
-		obs_data_set_string(settings, "sidechain_source", trigger.toUtf8().constData());
-		obs_data_set_double(settings, "threshold", threshold);
-		obs_data_set_double(settings, "ratio", ratio);
-		obs_data_set_int(settings, "attack_time", 10);
-		obs_data_set_int(settings, "release_time", 300);
-		obs_data_set_double(settings, "output_gain", 0);
+		obs_data_set_string(settings, "sidechain_source", trigger->currentText().toUtf8().constData());
+		obs_data_set_double(settings, "threshold", threshold->value());
+		obs_data_set_double(settings, "ratio", ratio->value());
+		obs_data_set_int(settings, "attack_time", attack->value());
+		obs_data_set_int(settings, "release_time", release->value());
+		if (!existing)
+			obs_data_set_double(settings, "output_gain", 0);
 		if (existing) {
 			obs_source_update(existing, settings);
-			obs_source_set_enabled(existing, true);
+			obs_source_set_enabled(existing, enabled->isChecked());
 		} else {
 			OBSSourceAutoRelease filter = obs_source_create_private("compressor_filter", filterName, settings);
 			if (!filter) {
 				QMessageBox::warning(this, tr("Audio Ducking"), tr("Native compressor is unavailable."));
 				return;
 			}
+			obs_source_set_enabled(filter, enabled->isChecked());
 			obs_source_filter_add(target, filter);
 		}
 		SaveProject();
