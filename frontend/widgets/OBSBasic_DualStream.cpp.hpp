@@ -16,6 +16,8 @@
 #include "frontend/build/frontend-widgets.pch.hpp"
 
 #include "OBSProjector.hpp"
+#include <QDesktopServices>
+#include <QUrl>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -1439,6 +1441,46 @@ void OBSBasic::InitDualStreamDock()
 	streamHealth->setWordWrap(true);
 	streamHealth->setText(tr("Multi-stream health: idle"));
 	layout->addWidget(streamHealth);
+	auto *replayRow = new QHBoxLayout;
+	auto *replayToggle = new QPushButton(tr("Start Replay Buffer"), content);
+	auto *replaySave = new QPushButton(tr("Save Replay"), content);
+	auto *replayPlay = new QPushButton(tr("Play Last Replay"), content);
+	auto *replayStatus = new QLabel(content);
+	replayStatus->setTextFormat(Qt::PlainText);
+	replayStatus->setWordWrap(true);
+	replayRow->addWidget(replayToggle);
+	replayRow->addWidget(replaySave);
+	replayRow->addWidget(replayPlay);
+	layout->addLayout(replayRow);
+	layout->addWidget(replayStatus);
+	connect(replayToggle, &QPushButton::clicked, this, [this] {
+		if (ReplayBufferActive())
+			StopReplayBuffer();
+		else
+			StartReplayBuffer();
+	});
+	connect(replaySave, &QPushButton::clicked, this, &OBSBasic::ReplayBufferSave);
+	connect(replayPlay, &QPushButton::clicked, this, [this] {
+		const QString path = QString::fromStdString(lastReplay);
+		if (!QFileInfo(path).isFile() || !QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+			QMessageBox::warning(this, tr("Replay"), tr("Unable to open the saved replay."));
+	});
+	auto updateReplay = [this, replayToggle, replaySave, replayPlay, replayStatus] {
+		const bool available = outputHandler && outputHandler->replayBuffer;
+		const bool active = ReplayBufferActive();
+		const QString path = QString::fromStdString(lastReplay);
+		replayToggle->setEnabled(available && !replayBufferStopping);
+		replayToggle->setText(active ? tr("Stop Replay Buffer") : tr("Start Replay Buffer"));
+		replaySave->setEnabled(active && !replayBufferStopping);
+		replayPlay->setEnabled(QFileInfo(path).isFile());
+		replayStatus->setText(!available ? tr("Enable Replay Buffer in Output settings.") :
+			path.isEmpty() ? tr("No replay saved yet") : tr("Last replay: %1").arg(path));
+	};
+	auto *replayTimer = new QTimer(content);
+	connect(replayTimer, &QTimer::timeout, content, updateReplay);
+	replayTimer->start(500);
+	updateReplay();
+
 	auto *ducking = new QPushButton(tr("Configure Audio Ducking"), content);
 	layout->addWidget(ducking);
 	connect(ducking, &QPushButton::clicked, this, [this] {
