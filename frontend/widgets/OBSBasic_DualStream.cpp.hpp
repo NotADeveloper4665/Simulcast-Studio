@@ -1443,6 +1443,101 @@ void OBSBasic::InitDualStreamDock()
 	streamHealth->setWordWrap(true);
 	streamHealth->setText(tr("Multi-stream health: idle"));
 	layout->addWidget(streamHealth);
+	// Timed horizontal scene rules deliberately suspend on manual changes or Studio Mode.
+	auto *switchRow = new QHBoxLayout;
+	auto *switchConfigure = new QPushButton(tr("Timed Scene Switch"), content);
+	auto *switchCancel = new QPushButton(tr("Cancel Switch"), content);
+	auto *switchStatus = new QLabel(tr("No scene switch scheduled"), content);
+	switchStatus->setTextFormat(Qt::PlainText);
+	switchStatus->setWordWrap(true);
+	switchCancel->setEnabled(false);
+	switchRow->addWidget(switchConfigure);
+	switchRow->addWidget(switchCancel);
+	layout->addLayout(switchRow);
+	layout->addWidget(switchStatus);
+	auto *switchTimer = new QTimer(content);
+	switchTimer->setInterval(200);
+	struct TimedSwitchRule {
+		QString origin;
+		QString destination;
+		QElapsedTimer clock;
+		qint64 delay = 0;
+	};
+	auto rule = std::make_shared<TimedSwitchRule>();
+	auto cancelRule = [switchTimer, switchCancel, switchConfigure, switchStatus](const QString &message) {
+		switchTimer->stop();
+		switchCancel->setEnabled(false);
+		switchConfigure->setEnabled(true);
+		switchStatus->setText(message);
+	};
+	connect(switchCancel, &QPushButton::clicked, content, [cancelRule] {
+		cancelRule(QObject::tr("Scene switch cancelled"));
+	});
+	connect(switchConfigure, &QPushButton::clicked, this, [this, rule, switchTimer, switchCancel, switchConfigure, switchStatus] {
+		if (IsPreviewProgramMode()) {
+			QMessageBox::information(this, tr("Timed Scene Switch"), tr("Leave Studio Mode before scheduling a program scene change."));
+			return;
+		}
+		const OBSSource current = GetCurrentSceneSource();
+		if (!current)
+			return;
+		QStringList names;
+		QStringList uuids;
+		for (int i = 0; i < ui->scenes->count(); ++i) {
+			const auto scene = GetOBSRef<OBSScene>(ui->scenes->item(i));
+			if (!scene)
+				continue;
+			auto *source = obs_scene_get_source(scene);
+			if (!source || source == current.Get())
+				continue;
+			names.append(QString::fromUtf8(obs_source_get_name(source)));
+			uuids.append(QString::fromUtf8(obs_source_get_uuid(source)));
+		}
+		if (names.isEmpty()) {
+			QMessageBox::information(this, tr("Timed Scene Switch"), tr("Add another horizontal scene first."));
+			return;
+		}
+		bool ok = false;
+		const auto chosen = QInputDialog::getItem(this, tr("Timed Scene Switch"), tr("Destination scene"), names, 0, false, &ok);
+		if (!ok || !names.contains(chosen))
+			return;
+		const int seconds = QInputDialog::getInt(this, tr("Timed Scene Switch"), tr("Seconds before transition"), 60, 1, 3600, 1, &ok);
+		if (!ok)
+			return;
+		rule->origin = QString::fromUtf8(obs_source_get_uuid(current));
+		rule->destination = uuids.at(names.indexOf(chosen));
+		rule->delay = qint64(seconds) * 1000;
+		rule->clock.start();
+		switchConfigure->setEnabled(false);
+		switchCancel->setEnabled(true);
+		switchStatus->setText(tr("Scene switch in %1 s").arg(seconds));
+		switchTimer->start();
+	});
+	connect(switchTimer, &QTimer::timeout, content, [this, rule, cancelRule, switchStatus] {
+		const OBSSource current = GetCurrentSceneSource();
+		if (IsPreviewProgramMode() || !current || QString::fromUtf8(obs_source_get_uuid(current)) != rule->origin) {
+			cancelRule(tr("Scene switch cancelled by operator override"));
+			return;
+		}
+		const auto remaining = rule->delay - rule->clock.elapsed();
+		if (remaining > 0) {
+			switchStatus->setText(tr("Scene switch in %1 s").arg((remaining + 999) / 1000));
+			return;
+		}
+		for (int i = 0; i < ui->scenes->count(); ++i) {
+			const auto scene = GetOBSRef<OBSScene>(ui->scenes->item(i));
+			if (!scene)
+				continue;
+			auto *source = obs_scene_get_source(scene);
+			if (source && QString::fromUtf8(obs_source_get_uuid(source)) == rule->destination) {
+				cancelRule(tr("Scheduled scene switch completed"));
+				SetCurrentScene(scene);
+				return;
+			}
+		}
+		cancelRule(tr("Scene switch cancelled: destination no longer exists"));
+	});
+
 	auto *playlistButton = new QPushButton(tr("Media Playlist"), content);
 	layout->addWidget(playlistButton);
 	connect(playlistButton, &QPushButton::clicked, this, [this] {
